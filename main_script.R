@@ -31,10 +31,6 @@ if (!require(pacman)){
   install.packages('pacman')
 }
 
-# grab functions
-source("~/projects/roslaUKB/main_analysis/0_functions.R") 
-# function: vec_to_fence() takes a vector and puts outliers to the fence (i.e., boxplot.stats)
-# function: RDjacked() for cov corrected fuzzy RD
 
 pacman::p_load(tidyverse, lubridate, stringr, fastDummies, mice, ggseg, kableExtra, rddensity, patchwork, ggrain)
 
@@ -50,7 +46,7 @@ pacman::p_load(tidyverse, lubridate, stringr, fastDummies, mice, ggseg, kableExt
 
 # attach to data with command K
 witte_vars <- data.table::fread("/Volumes/home/lifespan/nicjud/UKB/raw/N.Judd_2024_02_06.csv") # he (Ward.deWitte radboudumc.nl) said he doesn't have 196 & 24419
-witte_UKbirth <- data.table::fread("/Volumes/home/lifespan/nicjud/UKB/raw/XXX")
+witte_UKbirth <- data.table::fread("/Volumes/home/lifespan/nicjud/UKB/raw/N.Judd_2024_02_23.csv")
 
 
 # rm(list = ls()[ls() != "witte_vars"])
@@ -60,9 +56,9 @@ fullset <- data.table::copy(witte_vars)
 # UKBID-instance-array
 # instance 2 is the imaging visit!
 
-namevar = c(year = "34-0.0", month = "52-0.0", sex = "31-0.0", visit_date = "53-2.0",
+namevar = c(year = "34-0.0", month = "52-0.0", sex = "31-0.0", visit_date = "53-0.0",
             EduAge_1 = "845-0.0", EduAge_2 = "845-1.0", EduAge_3image = "845-2.0")
-cols_remove = c("54-0.0", "54-1.0", "54-3.0", "53-0.0", "53-1.0", "53-3.0", # I don't care about site visits that aren't imaging
+cols_remove = c("54-0.0", "54-1.0", "54-3.0", "53-2.0", "53-1.0", "53-3.0", # I don't care about the other site visits
                 "25921-3.0", "25922-3.0", "25928-3.0", "25925-3.0", "26500-3.0", #followup confounds
                 "190-0.0", # reasons for lost followup
                 "25921-2.0", "25922-2.0", "25928-2.0","25925-2.0", "26500-2.0", "54-2.0", #removed NEURO cols Row1
@@ -84,7 +80,7 @@ witte_UKbirth <- witte_UKbirth %>%
   mutate(UKbirth = coalesce(`1647-2.0`, `1647-1.0`, `1647-0.0`)) %>% 
   mutate(UKbirth = UKbirth %in% c(1,2,3)) %>% #England, Wales, Scotland
   select(eid, UKbirth)
-fullset <- witte_UK_headmotion[fullset, on = "eid"] #joining it to fullset
+fullset <- witte_UKbirth[fullset, on = "eid"] #joining it to fullset
 # must be born in England, Wales or Scotland
 fullset <- fullset[UKbirth==TRUE]
 
@@ -147,43 +143,48 @@ fullset <- fullset %>%
 # stage 1: EduAge16 ~ running_var + ROSLA_treat + running_var:ROSLA_treat
 # stage2: Y ~ running_var + EduAge16_fitted + running_var:EduAge16_fitted
 fullset$EduAge16 <- fullset$EduAge >= 16
-table(fullset$EduAge)
+# table(fullset$EduAge)
 
 # making sites dummy coded
-fullset <- fastDummies::dummy_cols(fullset, select_columns = "imaging_center", remove_first_dummy = TRUE)
+# fullset <- fastDummies::dummy_cols(fullset, select_columns = "imaging_center", remove_first_dummy = TRUE)
 
 # a summer dummy, since these people could technically end at 15 (but had the same amount of school)
 fullset$summer <- as.numeric(fullset$month %in% c(7,8)) # (July + Aug)
 
-# making global vars
-fullset$SA <- fullset$lSA + fullset$rSA
-fullset$CT <- fullset$lCT + fullset$rCT
-
-# adding mean global weighted FA (comes from 2_ContinuityROI.R)
-fullset <- wFA[fullset, on ="eid"]
-
-### saving the result
-# data.table::fwrite(fullset, "/Volumes/home/lifespan/nicjud/UKB/proc/20240223_fullset.csv")
-# fullset <- data.table::fread("/Volumes/home/lifespan/nicjud/UKB/proc/20240223_fullset.csv")
-
-fullset$CT <- fullset$CT/2 # you summed the hemisphere's for CT, when you want average CT
+# data.table::fwrite(fullset, "/Volumes/home/lifespan/nicjud/UKB/proc/xx")
+# fullset <- data.table::fread("/Volumes/home/lifespan/nicjud/UKB/proc/xx")
 
 # getting the time between ROSLA & scanning :) for neuroimaging peeepz
 scanage <- fullset[!is.na(visit_date),]
-
-# lets make it a bit more representative of the sample by making sure they have at least 1 global neuro cov
-
-scanage$nodata <- is.na(scanage$TBV_norm) + is.na(scanage$CT) + is.na(scanage$SA) + is.na(scanage$wFA) + is.na(scanage$CSF_norm) + is.na(scanage$WM_hyper)
-scanage <- scanage[!nodata == 6] # CANNOT have all 6 missing
-
-# visit_data_correct is just the error (first sub minus everyone)
-
 scanage$DOB <- ym(str_c(scanage$year,"-", scanage$month))
+#age of vist AoV
+scanage$AoV <- interval(scanage$DOB, scanage$visit_date) %/% months(1)/12
 
-# ggplot(scanage, aes(1, DOB)) + ggrain::geom_rain(point.args = list(alpha = .01))
 
-#age of scan
-scanage$AOS <- interval(scanage$DOB, scanage$visit_date) %/% months(1)/12
+
+# ggplot(scanage, aes(1, AoV)) + ggrain::geom_rain(point.args = list(alpha = .01))
+
+
+
+
+
+# you want to do an lm() or Bayes of 
+
+# telomere ~ AoV
+# telomere ~ EduYears
+
+
+# than you'll have age in years & educational years to compare with each other
+# according to the graph it'll be 5x for edu to age in years.
+
+
+fullset[running_var == min(running_var)]
+
+
+
+
+
+
 # SI_descpAGEplt <- ggplot(scanage, aes(1, AOS)) + 
 #   geom_rain(point.args = list(alpha = .08), fill = "#EC7063",
 #                     point.args.pos = list(position = position_jitter(width = 0.06, height = 0, seed = 42))) +
