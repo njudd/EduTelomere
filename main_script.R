@@ -32,7 +32,8 @@ if (!require(pacman)){
 }
 
 
-pacman::p_load(tidyverse, lubridate, stringr, fastDummies, mice, ggseg, kableExtra, rddensity, patchwork, ggrain)
+pacman::p_load(tidyverse, lubridate, stringr, fastDummies, mice, ggseg, RDHonest, # see notes must be v 0.4.1
+               kableExtra, rddensity, patchwork, ggrain, report)
 
 # using an old version of RDHonest. I shouldn't matter in this context, yet is the one I have installed
 # from the ROSLA brain paper, which needed covariates
@@ -47,6 +48,7 @@ pacman::p_load(tidyverse, lubridate, stringr, fastDummies, mice, ggseg, kableExt
 # attach to data with command K
 witte_vars <- data.table::fread("/Volumes/home/lifespan/nicjud/UKB/raw/N.Judd_2024_02_06.csv") # he (Ward.deWitte radboudumc.nl) said he doesn't have 196 & 24419
 witte_UKbirth <- data.table::fread("/Volumes/home/lifespan/nicjud/UKB/raw/N.Judd_2024_02_23.csv")
+witte_telomere <- data.table::fread("/Volumes/home/lifespan/nicjud/UKB/raw/N.Judd_2024_06_07.csv")
 
 
 # rm(list = ls()[ls() != "witte_vars"])
@@ -154,34 +156,100 @@ fullset$summer <- as.numeric(fullset$month %in% c(7,8)) # (July + Aug)
 # data.table::fwrite(fullset, "/Volumes/home/lifespan/nicjud/UKB/proc/xx")
 # fullset <- data.table::fread("/Volumes/home/lifespan/nicjud/UKB/proc/xx")
 
-# getting the time between ROSLA & scanning :) for neuroimaging peeepz
-scanage <- fullset[!is.na(visit_date),]
-scanage$DOB <- ym(str_c(scanage$year,"-", scanage$month))
+
+#adding telomeres
+witte_telomere <- witte_telomere[, .(eid, `22191-0.0`, `22192-0.0`)]
+tel_names <- c("adj_TS_ratio", "Z-adjusted_TS_log")
+colnames(witte_telomere)[2:3] <- tel_names
+
+fullset <- witte_telomere[fullset, on = "eid"] #joining it to fullset
+
+# doing what is recommended in the article
+fullset$ltl <- as.numeric(scale(log(fullset$adj_TS_ratio)))
+fullset[, (tel_names):=NULL]
+
+# data.table::fwrite(fullset, "~/Desktop/fullset_hold.csv")
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+#### 1.4 Analysis fuzzy local-linear RD   ####
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+
+# make sure this is done with the same data set called "telomere_set"
+# have a standard descriptive table of this dataset
+# first just uncorrected
+# than do outlier treatment
+# than check visit date for percision
+
+# fullset <- data.table::fread("~/Desktop/fullset_hold.csv")
+
+vec_to_fence <- function(vec){
+  stats <- boxplot.stats(vec)$stats
+  vec[vec < stats[1]] <- stats[1]
+  vec[vec > stats[5]] <- stats[5]
+  return(vec)}
+
+telomere_set <- data.table::copy(fullset)
+
+# library(ggrain); ggplot(fullset, aes(1, telomerelogSTD)) + geom_rain()
+# some serious outliers!
+# you can do one with & one without any outlier treatment...
+telomere_set <- telomere_set[complete.cases(telomere_set[, .(ltl, running_var, EduAge16)]),][ # no missingness allows in Y, running, or IV
+  ,c("ltl_NoOuts") := lapply(.SD, vec_to_fence), .SDcols=c('ltl')] # fencing covs with error & Y
+
+
+telomere_set$running_var.s <- as.numeric(scale(telomere_set$running_var))
+telomere_set$EduAge.s <- as.numeric(scale(telomere_set$EduAge))
+
+
+# making a descp table of relevant vars
+options(knitr.kable.NA = '')
+
+report_table(telomere_set[, .(ltl, ltl_NoOuts, running_var, running_var.s, EduAge, EduAge.s, EduAge16)]) %>% 
+  kbl(caption = "Descriptives Leukocyte Telomere Length (ltl)") %>%
+  kable_styling("hover", full_width = F) %>%
+  save_kable("~/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/descp_table.html")
+
+ltl_age <- lm(ltl ~ running_var, data = telomere_set)
+ltl_edu <- lm(ltl ~ EduAge, data = telomere_set)
+ltl_age$coefficients[2]*12; ltl_edu$coefficients[2]
+
+# std results
+ltl_age.s <- lm(ltl ~ running_var.s, data = telomere_set)
+ltl_edu.s <- lm(ltl ~ EduAge.s, data = telomere_set)
+ltl_age.s$coefficients[2]; ltl_edu.s$coefficients[2]
+
+# but there is heterogeneity in recruitment
+hist(telomere_set$visit_day_correct/365)
+# with very little for to the running var
+# cor(telomere_set$visit_day_correct, telomere_set$running_var)
+
+ltl_age_cor <- lm(ltl ~ running_var + visit_day_correct + visit_day_correct2, data = telomere_set)
+ltl_edu_cor <- lm(ltl ~ EduAge + visit_day_correct + visit_day_correct2, data = telomere_set)
+ltl_age_cor$coefficients[2]*12; ltl_edu_cor$coefficients[2]
+
+# double check syntax in the early manual***
+m1_pre <- RDHonest(ltl ~ EduAge16 |running_var, data = telomere_set)
+m1 <- RDHonest(ltl ~ EduAge16 |running_var, data = telomere_set,
+         T0 = m1_pre$coefficients$estimate)
+
+
+# getting the time between ROSLA & scanning :)
+visit <- fullset[!is.na(visit_date),]
+visit$DOB <- ym(str_c(visit$year,"-", visit$month))
 #age of vist AoV
-scanage$AoV <- interval(scanage$DOB, scanage$visit_date) %/% months(1)/12
+visit$AoV <- interval(visit$DOB, visit$visit_date) %/% months(1)/12
 
 
 
-# ggplot(scanage, aes(1, AoV)) + ggrain::geom_rain(point.args = list(alpha = .01))
+r <- RDHonest(AoV ~ EduAge16 |running_var, data = visit)
+
+RDHonest(AoV ~ EduAge16 |running_var, data = visit,
+         T0 = r$coefficients$estimate)
 
 
 
 
-
-# you want to do an lm() or Bayes of 
-
-# telomere ~ AoV
-# telomere ~ EduYears
-
-
-# than you'll have age in years & educational years to compare with each other
-# according to the graph it'll be 5x for edu to age in years.
-
-
-fullset[running_var == min(running_var)]
-
-
-
+summary(lm(telomerelogSTD ~ running_var.s + AoV, data = visit))
+summary(lm(telomerelogSTD ~ EduAge.s + AoV, data = visit))
 
 
 
@@ -225,117 +293,6 @@ mean(scanage$AOS) # 61.89 ~ 62
 
 
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
-#### 1.4 fuzzy RD for global vars   ####
-### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
-
-# not allowing missing in SA (Y), running_var or EduAge16
-
-covs <- c("sex", "t2_FLAIR", "visit_day_correct", "visit_day_correct2", "headmotion", "summer",
-          "imaging_center_11026", "imaging_center_11027", "imaging_center_11028", 
-           "dMRI_25922_1", "dMRI_25921_1", "dMRI_25928_1")
-covs_fence <- c("dMRI_25922_1", "dMRI_25921_1", "dMRI_25928_1")
-cols = c("EduAge16", "running_var", covs)
-
-# ct <- ct[,(col_fence.s) := lapply(.SD, vec_to_fence), .SDcols=col_fence.s]
-
-
-dim(fullset)
-# effect of covs
-# summary(lm(paste(c("SA ~ acq_time", covs), collapse=" + "), data = fullset))
-# summary(lm(paste(c("CT ~ acq_time", covs), collapse=" + "), data = fullset))
-# summary(lm(paste(c("WM_hyper ~ acq_time", covs), collapse=" + "), data = fullset))
-# summary(lm(paste(c("CSF_norm ~ acq_time", covs), collapse=" + "), data = fullset))
-# summary(lm(paste(c("TBV_norm ~ acq_time", covs), collapse=" + "), data = fullset))
-
-sa <- fullset[, c("SA", cols), with=FALSE]
-ct = fullset[, c("CT", cols), with=FALSE]
-WMh = fullset[, c("WM_hyper", cols), with=FALSE]
-CSFn = fullset[, c("CSF_norm", cols), with=FALSE]
-TBVn = fullset[, c("TBV_norm", cols), with=FALSE]
-wFAs = fullset[, c("wFA", cols), with=FALSE] # wFAs; s for subset since you already have a wFA DT
-
-# not allowing any missing in Y, running or instrument
-sa <- sa[complete.cases(sa[, .(SA, running_var, EduAge16)]),][ # no missingness allows in Y, running, or IV
-  ,c("SA", covs_fence) := lapply(.SD, vec_to_fence), .SDcols=c("SA", covs_fence)] # fencing covs with error & Y
-ct <- ct[complete.cases(ct[, .(CT, running_var, EduAge16)]),][ 
-  ,c("CT", covs_fence) := lapply(.SD, vec_to_fence), .SDcols=c("CT", covs_fence)]
-WMh <- WMh[complete.cases(WMh[, .(WM_hyper, running_var, EduAge16)]),][ 
-  ,c("WM_hyper", covs_fence) := lapply(.SD, vec_to_fence), .SDcols=c("WM_hyper", covs_fence)]
-CSFn <- CSFn[complete.cases(CSFn[, .(CSF_norm, running_var, EduAge16)]),][ 
-  ,c("CSF_norm", covs_fence) := lapply(.SD, vec_to_fence), .SDcols=c("CSF_norm", covs_fence)]
-TBVn <- TBVn[complete.cases(TBVn[, .(TBV_norm, running_var, EduAge16)]),][ 
-  ,c("TBV_norm", covs_fence) := lapply(.SD, vec_to_fence), .SDcols=c("TBV_norm", covs_fence)]
-wFAs <- wFAs[complete.cases(wFAs[, .(wFA, running_var, EduAge16)]),][ 
-  ,c("wFA", covs_fence) := lapply(.SD, vec_to_fence), .SDcols=c("wFA", covs_fence)]
-
-#you should also state the amount of missing.
-
-# sa_imp <- MICE_imp(sa, n = 10)
-# ct_imp <- MICE_imp(ct, n = 10)
-# CSFn_imp <- MICE_imp(CSFn, n = 10)
-# TBVn_imp <- MICE_imp(TBVn, n = 10)
-# wFAs_imp <- MICE_imp(wFAs, n = 10)
-# 
-# sa_imp_r <- with(sa_imp, RDjacked("SA", "running_var", fuzzy = 'EduAge16', df = data.frame(mget(ls())), covs = covs))
-# ct_imp_r <- with(ct_imp, RDjacked("CT", "running_var", fuzzy = 'EduAge16', df = data.frame(mget(ls())), covs = covs))
-# CSFn_imp_r <- with(CSFn_imp, RDjacked("CSF_norm", "running_var", fuzzy = 'EduAge16', df = data.frame(mget(ls())), covs = covs))
-# TBVn_imp_r <- with(TBVn_imp, RDjacked("TBV_norm", "running_var", fuzzy = 'EduAge16', df = data.frame(mget(ls())), covs = covs))
-# wFAs_imp_r <- with(wFAs_imp, RDjacked("wFA", "running_var", fuzzy = 'EduAge16', df = data.frame(mget(ls())), covs = covs))
-# 
-# # covs[covs != "t2_FLAIR"]
-# WMh_imp <- MICE_imp(WMh[,!"t2_FLAIR"], n = 10)
-# WMh_imp_r <- with(WMh_imp, RDjacked("WM_hyper", "running_var", fuzzy = 'EduAge16', df = data.frame(mget(ls())), covs = covs[covs != "t2_FLAIR"]))
-
-# checking missingness in covs
-# are they complete?
-1-sum(complete.cases(sa))/dim(sa)[1]
-1-sum(complete.cases(ct))/dim(ct)[1]
-1-sum(complete.cases(WMh))/dim(WMh)[1]
-1-sum(complete.cases(CSFn))/dim(CSFn)[1]
-1-sum(complete.cases(TBVn))/dim(TBVn)[1]
-1-sum(complete.cases(wFAs))/dim(wFAs)[1]
-# 0.04126855
-
-# missing dMRI covs
-sa = sa[complete.cases(sa),] #34010 to 32102
-ct = ct[complete.cases(ct),] #same as SA
-# Fuck these 3 have missingness in other Covs
-WMh = WMh[complete.cases(WMh),] #32676 to 31698
-CSFn = CSFn[complete.cases(CSFn),] #33634 to 32102
-TBVn = TBVn[complete.cases(TBVn),] #33634 to 32102
-wFAs = wFAs[complete.cases(wFAs),]
-
-m1_sa_fuzzy = RDjacked("SA", "running_var", fuzzy = 'EduAge16', df = sa, covs = covs) #352 t2_FLAIR
-m2_ct_fuzzy = RDjacked("CT", "running_var", fuzzy = 'EduAge16', df = ct, covs = covs) #same as above
-m3_WMh_fuzzy = RDjacked("WM_hyper", "running_var", fuzzy = 'EduAge16', df = WMh, covs = covs[covs != "t2_FLAIR"]) # only 2 occassions
-m4_CSFn_fuzzy = RDjacked("CSF_norm", "running_var", fuzzy = 'EduAge16', df = CSFn, covs = covs) #352 t2_FLAIR
-m5_TBVn_fuzzy = RDjacked("TBV_norm", "running_var", fuzzy = 'EduAge16', df = TBVn, covs = covs) #352 t2_FLAIR
-m6_wFA_fuzzy = RDjacked("wFA", "running_var", fuzzy = 'EduAge16', df = wFAs, covs = covs) # only 37 occassions
-
-global_results <- rbind(m1_sa_fuzzy, m2_ct_fuzzy, m3_WMh_fuzzy, m4_CSFn_fuzzy, m5_TBVn_fuzzy, m6_wFA_fuzzy)
-
-# global_results %>% #saving the results
-#   kbl(caption = "Global neuroimaging results") %>%
-#   kable_styling("hover", full_width = F) %>%
-#   save_kable("~/My_Drive/life/10 Projects/10.02 ROSLA UK BioBank/results/global_results.html")
-
-# making a table without covs
-
-# m1_sa_fuzzy_uY = RDjacked("SA", "running_var", fuzzy = 'EduAge16', df = sa) #352 t2_FLAIR
-# m2_ct_fuzzy_uY = RDjacked("CT", "running_var", fuzzy = 'EduAge16', df = ct) #same as above
-# m3_WMh_fuzzy_uY = RDjacked("WM_hyper", "running_var", fuzzy = 'EduAge16', df = WMh) # only 2 occassions
-# m4_CSFn_fuzzy_uY = RDjacked("CSF_norm", "running_var", fuzzy = 'EduAge16', df = CSFn) #352 t2_FLAIR
-# m5_TBVn_fuzzy_uY = RDjacked("TBV_norm", "running_var", fuzzy = 'EduAge16', df = TBVn) #352 t2_FLAIR
-# m6_wFA_fuzzy_uY = RDjacked("wFA", "running_var", fuzzy = 'EduAge16', df = wFAs) # only 37 occassions
-# 
-# global_results_uY <- rbind(m1_sa_fuzzy_uY, m2_ct_fuzzy_uY, m3_WMh_fuzzy_uY, m4_CSFn_fuzzy_uY, m5_TBVn_fuzzy_uY, m6_wFA_fuzzy_uY)
-# 
-# global_results_uY %>% #saving the results
-#   kbl(caption = "Global neuroimaging results uncorrected") %>%
-#   kable_styling("hover", full_width = F) %>%
-#   save_kable("~/My_Drive/life/10 Projects/10.02 ROSLA UK BioBank/results/global_results_uY.html")
-
-### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
 #### 1.3 plotting ####
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
 
@@ -345,230 +302,127 @@ global_results <- rbind(m1_sa_fuzzy, m2_ct_fuzzy, m3_WMh_fuzzy, m4_CSFn_fuzzy, m
 # rdrobust::rdplot(fullimage$SA, fullimage$running_var, p = 3)
 
 
-Edu16plt <- fullset[!is.na(fullset$visit_date),] %>% #making sure it is imaging subjects
+Edu16_plt <- fullset[!is.na(fullset$visit_date),] %>% #making sure it is imaging subjects
   group_by(running_var) %>% 
   summarise(piEdu16 = sum(EduAge16, na.rm = T)/n()) %>% 
   {ggplot(., aes(running_var, piEdu16)) +
       geom_point(color = "blue", alpha = .3) +
-      # geom_point(data=subset(., running_var > -m1_sa_fuzzy$bandwidth & running_var < m1_sa_fuzzy$bandwidth), color = "darkblue") +
-      # geom_point(data=subset(., running_var < -m1_sa_fuzzy$bandwidth | running_var  > m1_sa_fuzzy$bandwidth), color = "blue", alpha = .3) +
+      geom_point(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < m1$coefficients$bandwidth), color = "darkblue") +
+      geom_point(data=subset(., running_var < -m1$coefficients$bandwidth | running_var  > m1$coefficients$bandwidth), color = "blue", alpha = .3) +
       geom_vline(xintercept = 0,linetype="dashed") +
       geom_smooth(data=subset(., running_var < 0), method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
-      geom_smooth(data=subset(., running_var < 0), method='glm',formula=y~poly(x,2),se=F, color = "darkgreen") +
       geom_smooth(data=subset(., running_var > 0), method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
-      labs(y = bquote('Percent staying until 16'), x = "Date of Birth in Months") + # bquote('Total Surface Area'~(mm^3))
+      labs(y = bquote('Percent staying until 16'), x = "Date of Birth in Months", title = "First Stage ROSLA") + # bquote('Total Surface Area'~(mm^3))
       scale_x_continuous(breaks=c(-120,-60,0,60,120),
                          labels=c("Sept.\n1947", "Sept.\n1952", "Sept.\n1957", "Sept.\n1962", "Sept.\n1967")) +
-      ylim(c(.75, 1)) +
-      theme_minimal(base_size = 20) +
+      ylim(c(.6, 1)) +
+      theme_minimal(base_size = 22) +
       theme(axis.text.x= element_text(angle=45), axis.title.x = element_blank())
   }
-# ggsave("~/Google Drive/My Drive/life/10 Projects/10.02 ROSLA UK BioBank/results/plts/SI_Fig1.png", Edu16plt, width = 10, height = 8, bg = "white")
 
 
-# surface area
-SAplt <- sa %>% 
+# telomere plt
+telomere_plt <- telomere_set %>% 
   group_by(running_var) %>% 
-  summarise(sa = mean(SA, na.rm = T), n =n()) %>% 
+  summarise(sa = mean(telomerelogSTD, na.rm = T), n =n()) %>% 
   {ggplot(., aes(running_var, sa)) +
-      geom_point(data=subset(., running_var > -m1_sa_fuzzy$bandwidth & running_var < m1_sa_fuzzy$bandwidth), color = "darkblue") +
-      geom_point(data=subset(., running_var < -m1_sa_fuzzy$bandwidth | running_var  > m1_sa_fuzzy$bandwidth), color = "blue", alpha = .3) +
+      geom_point(color = "blue", alpha = .3) +
+      geom_point(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < m1$coefficients$bandwidth), color = "darkblue") +
+      geom_point(data=subset(., running_var < -m1$coefficients$bandwidth | running_var  > m1$coefficients$bandwidth), color = "blue", alpha = .3) +
       geom_vline(xintercept = 0,linetype="dashed") +
       geom_smooth(data=subset(., running_var < 0), method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
       geom_smooth(data=subset(., running_var > 0), method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
-      labs(y = expression("Total Surface Area mm" ^2 ~ ""), x = "Date of Birth in Months") + # bquote('Total Surface Area'~(mm^3))
+      labs(y = "Leukocyte Telomere Length", x = "Date of Birth in Months",  title = "Secound Stage ROSLA") + # bquote('Total Surface Area'~(mm^3))
       scale_x_continuous(breaks=c(-120,-60,0,60,120),
                          labels=c("Sept.\n1947", "Sept.\n1952", "Sept.\n1957", "Sept.\n1962", "Sept.\n1967")) +
       # scale_y_continuous(breaks=c(164000, 168000, 172000, 176000),
       #                    labels=c(expression("164000" ^mm2 ~ ""), "Sept.\n1952", "Sept.\n1957", "Sept.\n1962"),
       #                    limits = c(164000, 176000))+ 
-      ylim(c(164000, 176000)) +
-      theme_minimal(base_size = 20) +
+      ylim(c(-.3, .3)) +
+      theme_minimal(base_size = 22) +
       theme(axis.text.x= element_text(angle=45), axis.title.x = element_blank())}
 
-SAplt0 <- sa %>% 
+SI_plt1 <- Edu16_plt / telomere_plt + 
+  plot_annotation(tag_levels = 'a')
+
+ggsave("~/Google Drive/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/SI_plt1.png", 
+       SI_plt1, width = 12, height = 10)
+
+
+telomere_plt_linear <- telomere_set %>% 
   group_by(running_var) %>% 
-  summarise(sa = mean(SA, na.rm = T), n =n()) %>% 
+  summarise(sa = mean(telomerelogSTD, na.rm = T), n =n()) %>% 
   {ggplot(., aes(running_var, sa)) +
-      geom_point(color = "darkblue") +
-      # geom_smooth(method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
-      labs(y = bquote('Total\nSurface Area'), x = "Date of Birth in Months") + # bquote('Total Surface Area'~(mm^3))
-      scale_x_continuous(breaks=c(-120,-60,0,60,120),
-                         labels=c("Sept.\n1947", "Sept.\n1952", "Sept.\n1957", "Sept.\n1962", "Sept.\n1967")) +
-      ylim(c(164000, 176000)) +
-      theme_minimal(base_size = 20) +
-      theme(axis.text.x= element_text(angle=45), axis.title.x = element_blank())}
-
-
-# cortical thickness
-CTplt <- ct %>% 
-  group_by(running_var) %>% 
-  summarise(ct = mean(CT, na.rm = T), n =n()) %>% 
-  {ggplot(., aes(running_var, ct)) +
-      geom_point(data=subset(., running_var > -m2_ct_fuzzy$bandwidth & running_var < m2_ct_fuzzy$bandwidth), color = "darkblue") +
-      geom_point(data=subset(., running_var < -m2_ct_fuzzy$bandwidth | running_var  > m2_ct_fuzzy$bandwidth), color = "blue", alpha = .3) +
+      geom_point(color = "blue", alpha = .3) +
+      geom_point(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < m1$coefficients$bandwidth), color = "darkblue") +
+      geom_point(data=subset(., running_var < -m1$coefficients$bandwidth | running_var  > m1$coefficients$bandwidth), color = "blue", alpha = .3) +
       geom_vline(xintercept = 0,linetype="dashed") +
-      geom_smooth(data=subset(., running_var < 0), method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
-      geom_smooth(data=subset(., running_var > 0), method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
-      labs(y = 'Average Cortical\nThickness mm', x = "Date of Birth in Months") +
+      geom_smooth(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < 0), method='glm',formula=y~poly(x,1),se=F, color = "red") +
+      geom_smooth(data=subset(., running_var > 0 & running_var  < m1$coefficients$bandwidth), method='glm',formula=y~poly(x,1),se=F, color = "red") +
+      labs(y = "Leukocyte Telomere Length", x = "Date of Birth in Months") + # bquote('Total Surface Area'~(mm^3))
       scale_x_continuous(breaks=c(-120,-60,0,60,120),
                          labels=c("Sept.\n1947", "Sept.\n1952", "Sept.\n1957", "Sept.\n1962", "Sept.\n1967")) +
-      # ylim(c(164000, 176000)) +
-      theme_minimal(base_size = 20) +
-      theme(axis.text.x= element_text(angle=45), axis.title.x = element_blank())}
-
-CTplt0 <- ct %>% 
-  group_by(running_var) %>% 
-  summarise(ct = mean(CT, na.rm = T), n =n()) %>% 
-  {ggplot(., aes(running_var, ct)) +
-      geom_point(color = "darkblue") +
-      # geom_smooth(method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
-      labs(y = 'Average Cortical\nThickness', x = "Date of Birth in Months") +
-      scale_x_continuous(breaks=c(-120,-60,0,60,120),
-                         labels=c("Sept.\n1947", "Sept.\n1952", "Sept.\n1957", "Sept.\n1962", "Sept.\n1967")) +
-      # ylim(c(164000, 176000)) +
-      theme_minimal(base_size = 20) +
-      theme(axis.text.x= element_text(angle=45), axis.title.x = element_blank())}
- 
-# WMh
-WMhplt <- WMh %>% 
-  group_by(running_var) %>% 
-  summarise(WM_hyper = mean(WM_hyper, na.rm = T), n =n()) %>% 
-  {ggplot(., aes(running_var, WM_hyper)) +
-      geom_point(data=subset(., running_var > -m3_WMh_fuzzy$bandwidth & running_var < m3_WMh_fuzzy$bandwidth), color = "darkblue") +
-      geom_point(data=subset(., running_var < -m3_WMh_fuzzy$bandwidth | running_var  > m3_WMh_fuzzy$bandwidth), color = "blue", alpha = .3) +
-      geom_vline(xintercept = 0,linetype="dashed") +
-      geom_smooth(data=subset(., running_var < 0), method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
-      geom_smooth(data=subset(., running_var > 0), method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
-      labs(y = 'White Matter\nHyperintensities', x = "Date of Birth in Months") +
-      scale_x_continuous(breaks=c(-120,-60,0,60,120),
-                         labels=c("Sept.\n1947", "Sept.\n1952", "Sept.\n1957", "Sept.\n1962", "Sept.\n1967")) +
-      # ylim(c(164000, 176000)) +
-      theme_minimal(base_size = 15) +
-      theme(axis.text.x= element_text(angle=45), axis.title.x = element_blank())}
-
-WMhplt0 <- WMh %>% 
-  group_by(running_var) %>% 
-  summarise(WM_hyper = mean(WM_hyper, na.rm = T), n =n()) %>% 
-  {ggplot(., aes(running_var, WM_hyper)) +
-      geom_point(color = "darkblue") +
-      labs(y = 'White Matter\nHyperintensities', x = "Date of Birth in Months") +
-      scale_x_continuous(breaks=c(-120,-60,0,60,120),
-                         labels=c("Sept.\n1947", "Sept.\n1952", "Sept.\n1957", "Sept.\n1962", "Sept.\n1967")) +
-      theme_minimal(base_size = 20) +
+      # scale_y_continuous(breaks=c(164000, 168000, 172000, 176000),
+      #                    labels=c(expression("164000" ^mm2 ~ ""), "Sept.\n1952", "Sept.\n1957", "Sept.\n1962"),
+      #                    limits = c(164000, 176000))+ 
+      ylim(c(-.3, .3)) +
+      theme_minimal(base_size = 22) +
       theme(axis.text.x= element_text(angle=45), axis.title.x = element_blank())}
 
 
-# CSF
-CSFnplt <- CSFn %>% 
-  group_by(running_var) %>% 
-  summarise(CSF_norm = mean(CSF_norm, na.rm = T), n =n()) %>% 
-  {ggplot(., aes(running_var, CSF_norm)) +
-      geom_point(data=subset(., running_var > -m4_CSFn_fuzzy$bandwidth & running_var < m4_CSFn_fuzzy$bandwidth), color = "darkblue") +
-      geom_point(data=subset(., running_var < -m4_CSFn_fuzzy$bandwidth | running_var  > m4_CSFn_fuzzy$bandwidth), color = "blue", alpha = .3) +
-      geom_vline(xintercept = 0,linetype="dashed") +
-      geom_smooth(data=subset(., running_var < 0), method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
-      geom_smooth(data=subset(., running_var > 0), method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
-      labs(y = "Cerebrospinal\nFluid Volume", x = "Date of Birth in Months") + #this is in ml's
-      scale_x_continuous(breaks=c(-120,-60,0,60,120),
-                         labels=c("Sept.\n1947", "Sept.\n1952", "Sept.\n1957", "Sept.\n1962", "Sept.\n1967")) +
-      # ylim(c(164000, 176000)) +
-      theme_minimal(base_size = 15) +
-      theme(axis.text.x= element_text(angle=45), axis.title.x = element_blank())}
-
-CSFnplt0 <- CSFn %>% 
-  group_by(running_var) %>% 
-  summarise(CSF_norm = mean(CSF_norm, na.rm = T), n =n()) %>% 
-  {ggplot(., aes(running_var, CSF_norm)) +
-      geom_point(color = "darkblue") +
-      labs(y = "Cerebrospinal\nFluid Volume", x = "Date of Birth in Months") + #this is in ml's
-      scale_x_continuous(breaks=c(-120,-60,0,60,120),
-                         labels=c("Sept.\n1947", "Sept.\n1952", "Sept.\n1957", "Sept.\n1962", "Sept.\n1967")) +
-      theme_minimal(base_size = 20) +
-      theme(axis.text.x= element_text(angle=45), axis.title.x = element_blank())}
-
-# TBV
-TBVnplt <- TBVn %>% 
-  group_by(running_var) %>% 
-  summarise(TBV_norm = mean(TBV_norm, na.rm = T), n =n()) %>% 
-  {ggplot(., aes(running_var, TBV_norm)) +
-      geom_point(data=subset(., running_var > -m5_TBVn_fuzzy$bandwidth & running_var < m5_TBVn_fuzzy$bandwidth), color = "darkblue") +
-      geom_point(data=subset(., running_var < -m5_TBVn_fuzzy$bandwidth | running_var  > m5_TBVn_fuzzy$bandwidth), color = "blue", alpha = .3) +
-      geom_vline(xintercept = 0,linetype="dashed") +
-      geom_smooth(data=subset(., running_var < 0), method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
-      geom_smooth(data=subset(., running_var > 0), method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
-      labs(y = expression("Total Brain Volume mm" ^3 ~ ""), x = "Date of Birth in Months") +
-      scale_x_continuous(breaks=c(-120,-60,0,60,120),
-                         labels=c("Sept.\n1947", "Sept.\n1952", "Sept.\n1957", "Sept.\n1962", "Sept.\n1967")) +
-      # ylim(c(164000, 176000)) +
-      theme_minimal(base_size = 20) +
-      theme(axis.text.x= element_text(angle=45), axis.title.x = element_blank())}
-
-TBVnplt0 <- TBVn %>% 
-  group_by(running_var) %>% 
-  summarise(TBV_norm = mean(TBV_norm, na.rm = T), n =n()) %>% 
-  {ggplot(., aes(running_var, TBV_norm)) +
-      geom_point(color = "darkblue") +
-      # geom_smooth(method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
-      labs(y = 'Total Brain\nVolume', x = "Date of Birth in Months") +
-      scale_x_continuous(breaks=c(-120,-60,0,60,120),
-                         labels=c("Sept.\n1947", "Sept.\n1952", "Sept.\n1957", "Sept.\n1962", "Sept.\n1967")) +
-      theme_minimal(base_size = 20) +
-      theme(axis.text.x= element_text(angle=45), axis.title.x = element_blank())}
+ggsave("~/Google Drive/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/Plt1.png", 
+       telomere_plt_linear, width = 12, height = 8, bg = "white")
 
 
-# wFA
-wFAplt <- wFAs %>% 
-  group_by(running_var) %>% 
-  summarise(wFA = mean(wFA, na.rm = T), n =n()) %>% 
-  {ggplot(., aes(running_var, wFA)) +
-      geom_point(data=subset(., running_var > -m6_wFA_fuzzy$bandwidth & running_var < m6_wFA_fuzzy$bandwidth), color = "darkblue") +
-      geom_point(data=subset(., running_var < -m6_wFA_fuzzy$bandwidth | running_var  > m6_wFA_fuzzy$bandwidth), color = "blue", alpha = .3) +
-      geom_vline(xintercept = 0,linetype="dashed") +
-      geom_smooth(data=subset(., running_var < 0), method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
-      geom_smooth(data=subset(., running_var > 0), method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
-      labs(y = bquote('Weighted\nFractional Anisotropy'), x = "Date of Birth in Months") +
-      scale_x_continuous(breaks=c(-120,-60,0,60,120),
-                         labels=c("Sept.\n1947", "Sept.\n1952", "Sept.\n1957", "Sept.\n1962", "Sept.\n1967")) +
-      scale_y_continuous(breaks=c(.440, .445, .450)) + #.442,.444, .446, .448
-      # ylim(c(164000, 176000)) +
-      theme_minimal(base_size = 20) +
-      theme(axis.text.x= element_text(angle=45), axis.title.x = element_blank())}
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+#### 1.X LOCAL RANDOMIZATION #### 
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
 
-wFAplt0 <- wFAs %>% 
-  group_by(running_var) %>% 
-  summarise(wFA = mean(wFA, na.rm = T), n =n()) %>% 
-  {ggplot(., aes(running_var, wFA)) +
-      geom_point(color = "darkblue") +
-      # geom_smooth(method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
-      labs(y = bquote('Weighted\nFractional Anisotropy'), x = "Date of Birth in Months") +
-      scale_x_continuous(breaks=c(-120,-60,0,60,120),
-                         labels=c("Sept.\n1947", "Sept.\n1952", "Sept.\n1957", "Sept.\n1962", "Sept.\n1967")) +
-      scale_y_continuous(breaks=c(.440, .445, .450)) + #.442,.444, .446, .448
-      theme_minimal(base_size = 20) +
-      theme(axis.text.x= element_text(angle=45), axis.title.x = element_blank())}
-
-SAplt + CSFnplt + CTplt + WMhplt + TBVnplt + wFAplt + 
-  plot_annotation(tag_levels = 'a')
-
-# ggsave("~/Google Drive/My Drive/life/10 Projects/10.02 ROSLA UK BioBank/results/plts/Fig1.png")
-
-SAplt +  CTplt + TBVnplt + wFAplt + 
-  plot_annotation(tag_levels = 'a')
-# did base size 20
-# ggsave("~/Google Drive/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/results/plts/Fig1_4_take2.png", width = 16, height = 9)
-
-# plots without RD effect
-SAplt0 + CSFnplt0 + CTplt0 + WMhplt0 + TBVnplt0 + wFAplt0 + 
-  plot_annotation(tag_levels = 'a')
-# did base size 20
-# ggsave("~/Google Drive/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/results/plts/Fig1_6_0Blank.png", width = 20, height = 8)
+library(rstanarm); library(bayestestR); library(insight)
 
 
-CSFnplt / WMhplt + 
-  plot_annotation(tag_levels = 'a')
+m1 <- telomere_set[running_var %in% c(-1,0)][
+  , ROSLA := running_var >= 0
+]
+table(m1$ROSLA)
+BayesMod_m1 <- stan_glm("telomerelogSTD_out ~ ROSLA", data = m1, iter = 40000, refresh=0, prior = normal(location = 0, scale = 1, autoscale = TRUE))
+round(mean(get_parameters(BayesMod_m1)[,2]), 4)
+hdi(BayesMod_m1)
+bayesfactor_parameters(BayesMod_m1)
 
-# ggsave("~/Google Drive/My Drive/life/10 Projects/10.02 ROSLA UK BioBank/results/plts/SIfig2.png", width = 10, height = 8)
+m5 <- telomere_set[running_var %in% c(-5,-4, -3, -2, -1, 0, 1, 2, 3, 4)][
+  , ROSLA := running_var >= 0
+]
+
+table(m5$ROSLA)
+BayesMod_m5 <- stan_glm("telomerelogSTD_out ~ ROSLA + visit_day_correct + visit_day_correct2", data = m5, iter = 40000, refresh=0, prior = normal(location = 0, scale = 1, autoscale = TRUE))
+round(mean(get_parameters(BayesMod_m5)[,2]), 4)
+hdi(BayesMod_m5)
+bayesfactor_parameters(BayesMod_m5)
+
+# summary(lm(telomerelogSTD_out  ~ EduAge, data = telomere_set))
+rope(BayesMod_m5, range = c(-0.02, 0.02))
+
+######## remeber this is cohen D to SD!
+# summary(lm(telomerelogSTD_out  ~ EduAge.s, data = telomere_set))
+rope(BayesMod_m5, range = c(-0.05, 0.05))
+# so is .05 half...?
+
+
+
+# education increases & age decreases...
+# so both give more length... eventually age will just show up like it does here!
+m12 <- telomere_set[running_var %in% c(-12,-11,-10,-9,-8,-7,-6,-5,-4, -3, -2, -1, 0, 1, 2, 3, 4,5,6,7,8,9,10,11)][
+  , ROSLA := running_var >= 0
+]
+
+table(m12$ROSLA)
+BayesMod_m12 <- stan_glm("telomerelogSTD_out ~ ROSLA", data = m12, iter = 40000, refresh=0, prior = normal(location = 0, scale = 1, autoscale = TRUE))
+hdi(BayesMod_m12)
+
+
+# you could totally, plot each year against each other in stem & leaf...
+
 
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
 #### 1.5 Assumptions - Checking the RD design #### 
