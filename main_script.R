@@ -27,40 +27,25 @@
 #### 1.1 Loading & cleaning ####
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
 
-if (!require(pacman)){
-  install.packages('pacman')
-}
+if (!require(pacman)){install.packages('pacman')}
+pacman::p_load(tidyverse, lubridate, stringr, fastDummies, RDHonest,
+               kableExtra, rddensity, patchwork, ggrain, report, 
+               rstanarm, bayestestR, insight)
 
-
-pacman::p_load(tidyverse, lubridate, stringr, fastDummies, mice, ggseg, RDHonest, # see notes must be v 0.4.1
-               kableExtra, rddensity, patchwork, ggrain, report)
-
-# using an old version of RDHonest. I shouldn't matter in this context, yet is the one I have installed
-# from the ROSLA brain paper, which needed covariates
-# the RDHonest package added covariates, we will use an old verion from commit aa616f4 where p-vals were added
-# this is because we preregisterd, otherwise the new version with automatic covariate correction is prefered
-## new RD package with covs SA | EduAge16 ~ running_var | covs  
-# packageVersion("RDHonest") # 0.4.1 -----> 0.9
-# 
-# RDHonest(SA | EduAge16 ~ running_var, data = sa)
-# devtools::install_github("kolesarm/RDHonest@aa616f4", auth_token = auth)
-
-# attach to data with command K
+# using the new RDHonest syntax packageVersion("RDHonest")
+# attach to data with command K & the donders server
 witte_vars <- data.table::fread("/Volumes/home/lifespan/nicjud/UKB/raw/N.Judd_2024_02_06.csv") # he (Ward.deWitte radboudumc.nl) said he doesn't have 196 & 24419
 witte_UKbirth <- data.table::fread("/Volumes/home/lifespan/nicjud/UKB/raw/N.Judd_2024_02_23.csv")
 witte_telomere <- data.table::fread("/Volumes/home/lifespan/nicjud/UKB/raw/N.Judd_2024_06_07.csv")
-
 
 # rm(list = ls()[ls() != "witte_vars"])
 fullset <- data.table::copy(witte_vars)
 
 # renaming the UKB id's: https://biobank.ndph.ox.ac.uk/ukb/search.cgi
-# UKBID-instance-array
-# instance 2 is the imaging visit!
-
-namevar = c(year = "34-0.0", month = "52-0.0", sex = "31-0.0", visit_date = "53-0.0",
+# UKBID-instance-array (instance 0 is the first visit)
+namevar = c(year = "34-0.0", month = "52-0.0", sex = "31-0.0", visit_date = "53-0.0", site = "54-0.0",
             EduAge_1 = "845-0.0", EduAge_2 = "845-1.0", EduAge_3image = "845-2.0")
-cols_remove = c("54-0.0", "54-1.0", "54-3.0", "53-2.0", "53-1.0", "53-3.0", # I don't care about the other site visits
+cols_remove = c("54-1.0", "54-3.0", "53-2.0", "53-1.0", "53-3.0", # I don't care about the other site visits
                 "25921-3.0", "25922-3.0", "25928-3.0", "25925-3.0", "26500-3.0", #followup confounds
                 "190-0.0", # reasons for lost followup
                 "25921-2.0", "25922-2.0", "25928-2.0","25925-2.0", "26500-2.0", "54-2.0", #removed NEURO cols Row1
@@ -86,20 +71,11 @@ fullset <- witte_UKbirth[fullset, on = "eid"] #joining it to fullset
 # must be born in England, Wales or Scotland
 fullset <- fullset[UKbirth==TRUE]
 
-# adding telomere IDs
-
-#
-# insert telomeres
-#
-
-
-
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
 #### 1.2 making a running var ####
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
 
 fullset <- fullset %>% 
-  # mutate(running_var = ym(str_c(year, "-", month))) %>% # right now running_var is DOB in Year-Month (done above)
   mutate(birth_quarters = interval(ym("1957-9"), running_var) %/% months(3), # Sept 1957 is the DOB of the effected cohort
          running_var1959 = interval(ym("1959-9"),running_var) %/% months(1), # 2 years up
          running_var1955 = interval(ym("1955-9"),running_var) %/% months(1), # 2 years down
@@ -153,10 +129,6 @@ fullset$EduAge16 <- fullset$EduAge >= 16
 # a summer dummy, since these people could technically end at 15 (but had the same amount of school)
 fullset$summer <- as.numeric(fullset$month %in% c(7,8)) # (July + Aug)
 
-# data.table::fwrite(fullset, "/Volumes/home/lifespan/nicjud/UKB/proc/xx")
-# fullset <- data.table::fread("/Volumes/home/lifespan/nicjud/UKB/proc/xx")
-
-
 #adding telomeres
 witte_telomere <- witte_telomere[, .(eid, `22191-0.0`, `22192-0.0`)]
 tel_names <- c("adj_TS_ratio", "Z-adjusted_TS_log")
@@ -168,18 +140,8 @@ fullset <- witte_telomere[fullset, on = "eid"] #joining it to fullset
 fullset$ltl <- as.numeric(scale(log(fullset$adj_TS_ratio)))
 fullset[, (tel_names):=NULL]
 
-# data.table::fwrite(fullset, "~/Desktop/fullset_hold.csv")
-### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
-#### 1.4 Analysis fuzzy local-linear RD   ####
-### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
-
-# make sure this is done with the same data set called "telomere_set"
-# have a standard descriptive table of this dataset
-# first just uncorrected
-# than do outlier treatment
-# than check visit date for percision
-
-# fullset <- data.table::fread("~/Desktop/fullset_hold.csv")
+# data.table::fwrite(fullset, "/Volumes/home/lifespan/nicjud/UKB/proc/telomere_fullset.csv")
+# fullset <- data.table::fread("/Volumes/home/lifespan/nicjud/UKB/proc/xx")
 
 vec_to_fence <- function(vec){
   stats <- boxplot.stats(vec)$stats
@@ -195,14 +157,25 @@ telomere_set <- data.table::copy(fullset)
 telomere_set <- telomere_set[complete.cases(telomere_set[, .(ltl, running_var, EduAge16)]),][ # no missingness allows in Y, running, or IV
   ,c("ltl_NoOuts") := lapply(.SD, vec_to_fence), .SDcols=c('ltl')] # fencing covs with error & Y
 
-
 telomere_set$running_var.s <- as.numeric(scale(telomere_set$running_var))
 telomere_set$EduAge.s <- as.numeric(scale(telomere_set$EduAge))
 
+# data.table::fwrite(telomere_set, "/Volumes/home/lifespan/nicjud/UKB/proc/telomere_set.csv")
+
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+#### 1.4 Analysis fuzzy local-linear RD   ####
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+
+# make sure this is done with the same data set called "telomere_set"
+# have a standard descriptive table of this dataset
+# first just uncorrected
+# than do outlier treatment
+# than check visit date for percision
+
+# telomere_set <- data.table::fread("/Volumes/home/lifespan/nicjud/UKB/proc/telomere_set.csv")
 
 # making a descp table of relevant vars
 options(knitr.kable.NA = '')
-
 report_table(telomere_set[, .(ltl, ltl_NoOuts, running_var, running_var.s, EduAge, EduAge.s, EduAge16)]) %>% 
   kbl(caption = "Descriptives Leukocyte Telomere Length (ltl)") %>%
   kable_styling("hover", full_width = F) %>%
@@ -227,80 +200,28 @@ ltl_edu_cor <- lm(ltl ~ EduAge + visit_day_correct + visit_day_correct2, data = 
 ltl_age_cor$coefficients[2]*12; ltl_edu_cor$coefficients[2]
 
 # double check syntax in the early manual***
-m1_pre <- RDHonest(ltl ~ EduAge16 |running_var, data = telomere_set)
-m1 <- RDHonest(ltl ~ EduAge16 |running_var, data = telomere_set,
+m1_pre <- RDHonest(ltl | EduAge16  ~ running_var, data = telomere_set)
+m1 <- RDHonest(ltl | EduAge16 ~ running_var, data = telomere_set,
          T0 = m1_pre$coefficients$estimate)
+m1
+# check there is no association with visit date
+m0_1_pre <- RDHonest(visit_day_correct | EduAge16 ~ running_var, data = telomere_set)
+m0_1 <- RDHonest(visit_day_correct | EduAge16 ~ running_var, data = telomere_set, T0 = m0_1_pre$coefficients$estimate)
+m0_2_pre <- RDHonest(visit_day_correct2 | EduAge16 ~ running_var, data = telomere_set)
+m0_2 <- RDHonest(visit_day_correct2 | EduAge16 ~ running_var, data = telomere_set, T0 = m0_2_pre$coefficients$estimate)
+m0_1;m0_2
 
-
-# getting the time between ROSLA & scanning :)
-visit <- fullset[!is.na(visit_date),]
-visit$DOB <- ym(str_c(visit$year,"-", visit$month))
-#age of vist AoV
-visit$AoV <- interval(visit$DOB, visit$visit_date) %/% months(1)/12
-
-
-
-r <- RDHonest(AoV ~ EduAge16 |running_var, data = visit)
-
-RDHonest(AoV ~ EduAge16 |running_var, data = visit,
-         T0 = r$coefficients$estimate)
-
-
-
-
-summary(lm(telomerelogSTD ~ running_var.s + AoV, data = visit))
-summary(lm(telomerelogSTD ~ EduAge.s + AoV, data = visit))
-
-
-
-# SI_descpAGEplt <- ggplot(scanage, aes(1, AOS)) + 
-#   geom_rain(point.args = list(alpha = .08), fill = "#EC7063",
-#                     point.args.pos = list(position = position_jitter(width = 0.06, height = 0, seed = 42))) +
-#   theme_minimal(base_size = 25) +
-#   labs(x = "", y = "Age at neuroimaging") +
-#   theme(axis.text.x=element_blank(),
-#         axis.ticks.x=element_blank()) +
-#   scale_y_continuous(breaks = c(50,55,60,65,70,75,80))
-# 
-# ggsave("~/Google Drive/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/results/plts/SI_FigScanAGE.png", 
-#        SI_descpAGEplt, bg = "white")
-
-# looks normal take the mean
-mean(scanage$AOS) # 61.89 ~ 62
-
-62-16 # 16 because it is the years AFTER the intervention
-
-# 46 years
-
-# issue of visit days vs Running var & DOB
-
-# cor(fullset$visit_day_correct, fullset$running_var, use = "pairwise.complete.obs")
-# cor(fullset$visit_day_correct, fullset$year, use = "pairwise.complete.obs")
-# 
-# ggplot(fullset, aes(visit_day_correct, running_var)) +
-#   geom_point(alpha = .1) +
-#   geom_smooth()
-# 
-# 
-# visit_day_correct ~ EduAge16 | running_var
-# 
-# cor(sa$visit_day_correct, sa$running_var, use = "pairwise.complete.obs")
-# 
-# sa$ROSLA <- sa$running_var >0 #this is the NatEx grouped
-# 
-# summary(lm(ROSLA ~ visit_day_correct, data =sa))
-# cor(sa$visit_day_correct, sa$running_var, use = "pairwise.complete.obs")
-
+# with covariates and a cluster ID
+m1_pre_treated <- RDHonest(ltl | EduAge16  ~ running_var | summer + visit_day_correct + visit_day_correct2, 
+                           data = telomere_set, clusterid = site, se.method="EHW", )
+m1_treated <- RDHonest(ltl | EduAge16  ~ running_var | summer + visit_day_correct + visit_day_correct2, 
+                       data = telomere_set, clusterid = site, se.method="EHW", 
+                       T0 = m1_pre_treated$coefficients$estimate)
+m1_treated
 
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
 #### 1.3 plotting ####
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
-
-#moving plotting below so I can put the MSE derived bounds
-
-# RDHonest::RDScatter(SA~birth_quarters, data = fullimage, avg = Inf, propdotsize = T, vert = T)
-# rdrobust::rdplot(fullimage$SA, fullimage$running_var, p = 3)
-
 
 Edu16_plt <- fullset[!is.na(fullset$visit_date),] %>% #making sure it is imaging subjects
   group_by(running_var) %>% 
@@ -312,7 +233,7 @@ Edu16_plt <- fullset[!is.na(fullset$visit_date),] %>% #making sure it is imaging
       geom_vline(xintercept = 0,linetype="dashed") +
       geom_smooth(data=subset(., running_var < 0), method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
       geom_smooth(data=subset(., running_var > 0), method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
-      labs(y = bquote('Percent staying until 16'), x = "Date of Birth in Months", title = "First Stage ROSLA") + # bquote('Total Surface Area'~(mm^3))
+      labs(y = bquote('Completed 16 yrs\nof Education (%)'), x = "Date of Birth in Months", title = bquote('Raising of School Leaving Age 1973 Act (1'^st~'Stage)')) + # bquote('Total Surface Area'~(mm^3))
       scale_x_continuous(breaks=c(-120,-60,0,60,120),
                          labels=c("Sept.\n1947", "Sept.\n1952", "Sept.\n1957", "Sept.\n1962", "Sept.\n1967")) +
       ylim(c(.6, 1)) +
@@ -320,11 +241,10 @@ Edu16_plt <- fullset[!is.na(fullset$visit_date),] %>% #making sure it is imaging
       theme(axis.text.x= element_text(angle=45), axis.title.x = element_blank())
   }
 
-
 # telomere plt
 telomere_plt <- telomere_set %>% 
   group_by(running_var) %>% 
-  summarise(sa = mean(telomerelogSTD, na.rm = T), n =n()) %>% 
+  summarise(sa = mean(ltl, na.rm = T), n =n()) %>% 
   {ggplot(., aes(running_var, sa)) +
       geom_point(color = "blue", alpha = .3) +
       geom_point(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < m1$coefficients$bandwidth), color = "darkblue") +
@@ -332,7 +252,7 @@ telomere_plt <- telomere_set %>%
       geom_vline(xintercept = 0,linetype="dashed") +
       geom_smooth(data=subset(., running_var < 0), method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
       geom_smooth(data=subset(., running_var > 0), method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
-      labs(y = "Leukocyte Telomere Length", x = "Date of Birth in Months",  title = "Secound Stage ROSLA") + # bquote('Total Surface Area'~(mm^3))
+      labs(y = "Leukocyte\nTelomere Length (LTL)", x = "Date of Birth in Months",  title = bquote('Raising of School Leaving Age 1973 Act (2'^nd~'Stage)')) + # bquote('Total Surface Area'~(mm^3))
       scale_x_continuous(breaks=c(-120,-60,0,60,120),
                          labels=c("Sept.\n1947", "Sept.\n1952", "Sept.\n1957", "Sept.\n1962", "Sept.\n1967")) +
       # scale_y_continuous(breaks=c(164000, 168000, 172000, 176000),
@@ -345,41 +265,35 @@ telomere_plt <- telomere_set %>%
 SI_plt1 <- Edu16_plt / telomere_plt + 
   plot_annotation(tag_levels = 'a')
 
-ggsave("~/Google Drive/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/SI_plt1.png", 
-       SI_plt1, width = 12, height = 10)
-
+# ggsave("~/Google Drive/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/SI_plt1.png",
+#        SI_plt1, width = 12, height = 10)
 
 telomere_plt_linear <- telomere_set %>% 
   group_by(running_var) %>% 
-  summarise(sa = mean(telomerelogSTD, na.rm = T), n =n()) %>% 
+  summarise(sa = mean(ltl, na.rm = T), n =n()) %>% 
   {ggplot(., aes(running_var, sa)) +
-      geom_point(color = "blue", alpha = .3) +
-      geom_point(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < m1$coefficients$bandwidth), color = "darkblue") +
-      geom_point(data=subset(., running_var < -m1$coefficients$bandwidth | running_var  > m1$coefficients$bandwidth), color = "blue", alpha = .3) +
+      geom_point(color = "#34495E", alpha = .3, size = 3) +
+      geom_point(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < m1$coefficients$bandwidth), color = "black", alpha = .8, size = 3) +
+      geom_point(data=subset(., running_var < -m1$coefficients$bandwidth | running_var  > m1$coefficients$bandwidth), color = "#34495E", alpha = .3, size = 3) +
       geom_vline(xintercept = 0,linetype="dashed") +
-      geom_smooth(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < 0), method='glm',formula=y~poly(x,1),se=F, color = "red") +
-      geom_smooth(data=subset(., running_var > 0 & running_var  < m1$coefficients$bandwidth), method='glm',formula=y~poly(x,1),se=F, color = "red") +
-      labs(y = "Leukocyte Telomere Length", x = "Date of Birth in Months") + # bquote('Total Surface Area'~(mm^3))
+      geom_smooth(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < 0), method='glm',formula=y~poly(x,1),se=F, color = "blue",  size = 1.5) +
+      geom_smooth(data=subset(., running_var > 0 & running_var  < m1$coefficients$bandwidth), method='glm',formula=y~poly(x,1),se=F, color = "blue",  size = 1.5) +
+      labs(y = "Leukocyte Telomere\nLength (LTL)", x = "Date of Birth in Months") + # bquote('Total Surface Area'~(mm^3))
       scale_x_continuous(breaks=c(-120,-60,0,60,120),
                          labels=c("Sept.\n1947", "Sept.\n1952", "Sept.\n1957", "Sept.\n1962", "Sept.\n1967")) +
       # scale_y_continuous(breaks=c(164000, 168000, 172000, 176000),
       #                    labels=c(expression("164000" ^mm2 ~ ""), "Sept.\n1952", "Sept.\n1957", "Sept.\n1962"),
       #                    limits = c(164000, 176000))+ 
       ylim(c(-.3, .3)) +
-      theme_minimal(base_size = 22) +
+      theme_minimal(base_size = 30) +
       theme(axis.text.x= element_text(angle=45), axis.title.x = element_blank())}
 
-
-ggsave("~/Google Drive/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/Plt1.png", 
-       telomere_plt_linear, width = 12, height = 8, bg = "white")
-
+# ggsave("~/Google Drive/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/Plt1.png",
+#        telomere_plt_linear, width = 14, height = 8, bg = "white")
 
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
 #### 1.X LOCAL RANDOMIZATION #### 
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
-
-library(rstanarm); library(bayestestR); library(insight)
-
 
 m1 <- telomere_set[running_var %in% c(-1,0)][
   , ROSLA := running_var >= 0
@@ -408,8 +322,6 @@ rope(BayesMod_m5, range = c(-0.02, 0.02))
 rope(BayesMod_m5, range = c(-0.05, 0.05))
 # so is .05 half...?
 
-
-
 # education increases & age decreases...
 # so both give more length... eventually age will just show up like it does here!
 m12 <- telomere_set[running_var %in% c(-12,-11,-10,-9,-8,-7,-6,-5,-4, -3, -2, -1, 0, 1, 2, 3, 4,5,6,7,8,9,10,11)][
@@ -422,65 +334,3 @@ hdi(BayesMod_m12)
 
 
 # you could totally, plot each year against each other in stem & leaf...
-
-
-### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
-#### 1.5 Assumptions - Checking the RD design #### 
-### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
-
-# for these tests, I obviously want to use the sample I analyzed (the neuroimaging followup; instance 2)
-# I select these subjects by filtering by visit date, which is only instance 2
-# fullset[!is.na(fullset$visit_date),]
-
-# Density of the running variable, silly test for ROSLA
-# rddensity: all statistics & default options
-# it is assuming something not great about zero; redoing the running var to fix this
-scanage$running_var_SHIFT <- scanage$running_var # shifting positive values by 1; so 0 -> 1, etc etc...
-scanage$running_var_SHIFT[scanage$running_var_SHIFT >=0] <- scanage$running_var_SHIFT[scanage$running_var_SHIFT >=0] +1
-
-# scanage is a better representation of the included subjects!
-dens_test <- rddensity(X = scanage$running_var_SHIFT) 
-
-# testing the covariates
-simple_fuzzy <- function(f, dt){
-  p0 <- RDHonest(f, data = dt)
-  p1 <- RDHonest(f, data = dt, T0 = p0$coefficients$estimate) #as seen in the vinjette; giving a starting val
-  out <- p1$coefficients[c("term", "bandwidth", "eff.obs", "estimate", "conf.low", "conf.high", "p.value")]
-  out[2:6] <- round(out[2:6], 2) #rounding; not the p because I will FDR
-  out$term = f # adding the forumula to the output
-  return(out)
-}
-
-# dummy coding cols means you miss one center on the test
-fullset$imaging_center_11025 <- fullset$imaging_center == 11025
-covsT <- c(covs, "imaging_center_11025")
-
-covsT %>%
-  str_c(., " ~ EduAge16 | running_var") %>% #making a forumula from the covs
-  map_dfr(~simple_fuzzy(., dt = fullset[!is.na(fullset$visit_date),])) %>% #RDHonest automatically listwise deletes
-  mutate(pFDR = round(p.adjust(p.value, method = 'fdr'), 3),
-         p.value = round(p.value, 3)) %>%
-  kbl(caption = "Placebo Outcomes from the covs of no interest") %>%
-  kable_styling("hover", full_width = F) %>%
-  save_kable("~/My_Drive/life/10 Projects/10.02 ROSLA UK BioBank/results/SI_Table1_placebo_outcomes2.html")
-
-
-
-# looking closer into summer, need to be donut holed removing running var 7,8,9,10 of 1957
-# summer is deterministically related to ROSLA for a 2 mnth window around the cutoff
-summer0 <- RDHonest(summer ~ EduAge16 | running_var, data = fullset[!is.na(fullset$visit_date),])
-summer1 <- RDHonest(summer ~ EduAge16 | running_var, data = fullset[!is.na(fullset$visit_date),], T0 = summer0$coefficients$estimate)
-
-# I think it wants to running var remapped
-twoDonuts <- fullset[!fullset$running_var %in% c(-2,-1, 0, 1),]
-twoDonuts$running_var[twoDonuts$running_var >=0] <- twoDonuts$running_var[twoDonuts$running_var >=0] -2
-twoDonuts$running_var[twoDonuts$running_var <0] <- twoDonuts$running_var[twoDonuts$running_var <0] +2
-table(twoDonuts$running_var)
-
-summerD0 <- RDHonest(summer ~ EduAge16 | running_var, data = twoDonuts[!is.na(twoDonuts$visit_date),])
-summerD1 <- RDHonest(summer ~ EduAge16 | running_var, data = twoDonuts[!is.na(twoDonuts$visit_date),], T0 = summerD0$coefficients$estimate)
-
-
-# moving the running var is used commonly; yet we have no sig result to test...
-
-
