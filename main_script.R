@@ -141,7 +141,7 @@ fullset$ltl <- as.numeric(scale(log(fullset$adj_TS_ratio)))
 fullset[, (tel_names):=NULL]
 
 # data.table::fwrite(fullset, "/Volumes/home/lifespan/nicjud/UKB/proc/telomere_fullset.csv")
-# fullset <- data.table::fread("/Volumes/home/lifespan/nicjud/UKB/proc/xx")
+# fullset <- data.table::fread("/Volumes/home/lifespan/nicjud/UKB/proc/telomere_fullset.csv")
 
 vec_to_fence <- function(vec){
   stats <- boxplot.stats(vec)$stats
@@ -159,6 +159,13 @@ telomere_set <- telomere_set[complete.cases(telomere_set[, .(ltl, running_var, E
 
 telomere_set$running_var.s <- as.numeric(scale(telomere_set$running_var))
 telomere_set$EduAge.s <- as.numeric(scale(telomere_set$EduAge))
+
+# doing a 3SD outlier test
+telomere_set$ltl_3SD <- telomere_set$ltl
+telomere_set$ltl_3SD[telomere_set$ltl_3SD>3 | telomere_set$ltl_3SD<(-3)] <- rep(NA, length(telomere_set$ltl_3SD[telomere_set$ltl_3SD>3 | telomere_set$ltl_3SD<(-3)]))
+sum(is.na(telomere_set$ltl_3SD))/length(telomere_set$ltl_3SD)
+
+
 
 # data.table::fwrite(telomere_set, "/Volumes/home/lifespan/nicjud/UKB/proc/telomere_set.csv")
 
@@ -185,6 +192,8 @@ ltl_age <- lm(ltl ~ running_var, data = telomere_set)
 ltl_edu <- lm(ltl ~ EduAge, data = telomere_set)
 ltl_age$coefficients[2]*12; ltl_edu$coefficients[2]
 
+confint(ltl_age); confint(ltl_edu)
+
 # std results
 ltl_age.s <- lm(ltl ~ running_var.s, data = telomere_set)
 ltl_edu.s <- lm(ltl ~ EduAge.s, data = telomere_set)
@@ -199,11 +208,20 @@ ltl_age_cor <- lm(ltl ~ running_var + visit_day_correct + visit_day_correct2, da
 ltl_edu_cor <- lm(ltl ~ EduAge + visit_day_correct + visit_day_correct2, data = telomere_set)
 ltl_age_cor$coefficients[2]*12; ltl_edu_cor$coefficients[2]
 
-# double check syntax in the early manual***
+# double check syntax in the early manual
 m1_pre <- RDHonest(ltl | EduAge16  ~ running_var, data = telomere_set)
 m1 <- RDHonest(ltl | EduAge16 ~ running_var, data = telomere_set,
          T0 = m1_pre$coefficients$estimate)
 m1
+
+# outlier treated (very little of the data)
+m1_pre_treated <- RDHonest(ltl_3SD | EduAge16  ~ running_var, 
+                           data = telomere_set)
+m1_treated <- RDHonest(ltl_3SD | EduAge16  ~ running_var,
+                       data = telomere_set,
+                       T0 = m1_pre_treated$coefficients$estimate)
+m1_treated
+
 # check there is no association with visit date
 m0_1_pre <- RDHonest(visit_day_correct | EduAge16 ~ running_var, data = telomere_set)
 m0_1 <- RDHonest(visit_day_correct | EduAge16 ~ running_var, data = telomere_set, T0 = m0_1_pre$coefficients$estimate)
@@ -212,12 +230,12 @@ m0_2 <- RDHonest(visit_day_correct2 | EduAge16 ~ running_var, data = telomere_se
 m0_1;m0_2
 
 # with covariates and a cluster ID
-m1_pre_treated <- RDHonest(ltl | EduAge16  ~ running_var | summer + visit_day_correct + visit_day_correct2, 
-                           data = telomere_set, clusterid = site, se.method="EHW", )
-m1_treated <- RDHonest(ltl | EduAge16  ~ running_var | summer + visit_day_correct + visit_day_correct2, 
-                       data = telomere_set, clusterid = site, se.method="EHW", 
-                       T0 = m1_pre_treated$coefficients$estimate)
-m1_treated
+m1_pre_covs <- RDHonest(ltl | EduAge16  ~ running_var | visit_day_correct + visit_day_correct2, 
+                        data = telomere_set)
+m1_covs <- RDHonest(ltl | EduAge16  ~ running_var | visit_day_correct + visit_day_correct2, 
+                    data = telomere_set,
+                    T0 = m1_pre_covs$coefficients$estimate)
+m1_covs
 
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
 #### 1.3 plotting ####
@@ -276,8 +294,9 @@ telomere_plt_linear <- telomere_set %>%
       geom_point(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < m1$coefficients$bandwidth), color = "black", alpha = .8, size = 3) +
       geom_point(data=subset(., running_var < -m1$coefficients$bandwidth | running_var  > m1$coefficients$bandwidth), color = "#34495E", alpha = .3, size = 3) +
       geom_vline(xintercept = 0,linetype="dashed") +
-      geom_smooth(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < 0), method='glm',formula=y~poly(x,1),se=F, color = "blue",  size = 1.5) +
-      geom_smooth(data=subset(., running_var > 0 & running_var  < m1$coefficients$bandwidth), method='glm',formula=y~poly(x,1),se=F, color = "blue",  size = 1.5) +
+      geom_smooth(data=subset(., running_var > -m1$coefficients$bandwidth & running_var  < m1$coefficients$bandwidth), method='glm',formula=y~poly(x,1),se=F, color = "blue",  size = 1.5) +
+      # geom_smooth(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < 0), method='glm',formula=y~poly(x,1),se=F, color = "blue",  size = 1.5) +
+      # geom_smooth(data=subset(., running_var > 0 & running_var  < m1$coefficients$bandwidth), method='glm',formula=y~poly(x,1),se=F, color = "blue",  size = 1.5) +
       labs(y = "Leukocyte Telomere\nLength (LTL)", x = "Date of Birth in Months") + # bquote('Total Surface Area'~(mm^3))
       scale_x_continuous(breaks=c(-120,-60,0,60,120),
                          labels=c("Sept.\n1947", "Sept.\n1952", "Sept.\n1957", "Sept.\n1962", "Sept.\n1967")) +
@@ -291,6 +310,7 @@ telomere_plt_linear <- telomere_set %>%
 # ggsave("~/Google Drive/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/Plt1.png",
 #        telomere_plt_linear, width = 14, height = 8, bg = "white")
 
+
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
 #### 1.X LOCAL RANDOMIZATION #### 
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
@@ -299,20 +319,28 @@ m1 <- telomere_set[running_var %in% c(-1,0)][
   , ROSLA := running_var >= 0
 ]
 table(m1$ROSLA)
-BayesMod_m1 <- stan_glm("telomerelogSTD_out ~ ROSLA", data = m1, iter = 40000, refresh=0, prior = normal(location = 0, scale = 1, autoscale = TRUE))
+BayesMod_m1 <- stan_glm("ltl ~ ROSLA", data = m1, iter = 40000, refresh=0, prior = normal(location = 0, scale = 1, autoscale = TRUE))
 round(mean(get_parameters(BayesMod_m1)[,2]), 4)
 hdi(BayesMod_m1)
 bayesfactor_parameters(BayesMod_m1)
+BF_BayesMod_m1<- bayesfactor_parameters(BayesMod_m1)
+
+
+1/0.023
 
 m5 <- telomere_set[running_var %in% c(-5,-4, -3, -2, -1, 0, 1, 2, 3, 4)][
   , ROSLA := running_var >= 0
 ]
 
+# + visit_day_correct + visit_day_correct2
+
 table(m5$ROSLA)
-BayesMod_m5 <- stan_glm("telomerelogSTD_out ~ ROSLA + visit_day_correct + visit_day_correct2", data = m5, iter = 40000, refresh=0, prior = normal(location = 0, scale = 1, autoscale = TRUE))
+BayesMod_m5 <- stan_glm("ltl ~ ROSLA", data = m5, iter = 40000, refresh=0, prior = normal(location = 0, scale = 1, autoscale = TRUE))
 round(mean(get_parameters(BayesMod_m5)[,2]), 4)
 hdi(BayesMod_m5)
-bayesfactor_parameters(BayesMod_m5)
+BF_BayesMod_m5<- bayesfactor_parameters(BayesMod_m5)
+
+1/0.012
 
 # summary(lm(telomerelogSTD_out  ~ EduAge, data = telomere_set))
 rope(BayesMod_m5, range = c(-0.02, 0.02))
