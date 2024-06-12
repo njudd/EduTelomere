@@ -275,10 +275,10 @@ stage1Plt_inter <- telomere_set %>%
       geom_vline(xintercept = 0,linetype="dashed") +
       geom_smooth(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < 0), method='glm',formula=y~poly(x,1),se=F, color = "blue",  size = 1.5) +
       geom_smooth(data=subset(., running_var > 0 & running_var  < m1$coefficients$bandwidth), method='glm',formula=y~poly(x,1),se=F, color = "blue",  size = 1.5) +
-      labs(y = bquote('Completed 16 yrs\nof Education (%)'), x = "Date of Birth in Months", title = bquote('Raising of School Leaving Age 1973 Act (1'^st~'Stage)')) + # bquote('Total Surface Area'~(mm^3))
+      labs(y = bquote('Completed 16 yrs\nof Education (%)'), x = "Date of Birth in Months") + # bquote('Total Surface Area'~(mm^3))
       scale_x_continuous(breaks=c(-120,-60,0,60,120),
                          labels=c("Sept.\n1947", "Sept.\n1952", "Sept.\n1957", "Sept.\n1962", "Sept.\n1967")) +
-      ylim(c(-.3, .3)) +
+      ylim(c(.6, 1)) +
       theme_minimal(base_size = 30) +
       theme(axis.text.x= element_text(angle=45), axis.title.x = element_blank())}
 
@@ -302,10 +302,8 @@ stage2Plt_inter <- telomere_set %>%
 StagedPlt <- stage1Plt_inter / stage2Plt_inter + 
   plot_annotation(tag_levels = 'a')
 
-ggsave("~/Google Drive/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/SI_plt1.png",
-       SI_plt1, width = 14, height = 16)
-
-
+# ggsave("~/Google Drive/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/SI_plt1.png",
+#        StagedPlt, width = 14, height = 16)
 
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
 #### 1.X LOCAL RANDOMIZATION #### 
