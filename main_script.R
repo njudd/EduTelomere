@@ -241,51 +241,6 @@ m1_covs
 #### 1.3 plotting ####
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
 
-Edu16_plt <- fullset[!is.na(fullset$visit_date),] %>% #making sure it is imaging subjects
-  group_by(running_var) %>% 
-  summarise(piEdu16 = sum(EduAge16, na.rm = T)/n()) %>% 
-  {ggplot(., aes(running_var, piEdu16)) +
-      geom_point(color = "blue", alpha = .3) +
-      geom_point(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < m1$coefficients$bandwidth), color = "darkblue") +
-      geom_point(data=subset(., running_var < -m1$coefficients$bandwidth | running_var  > m1$coefficients$bandwidth), color = "blue", alpha = .3) +
-      geom_vline(xintercept = 0,linetype="dashed") +
-      geom_smooth(data=subset(., running_var < 0), method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
-      geom_smooth(data=subset(., running_var > 0), method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
-      labs(y = bquote('Completed 16 yrs\nof Education (%)'), x = "Date of Birth in Months", title = bquote('Raising of School Leaving Age 1973 Act (1'^st~'Stage)')) + # bquote('Total Surface Area'~(mm^3))
-      scale_x_continuous(breaks=c(-120,-60,0,60,120),
-                         labels=c("Sept.\n1947", "Sept.\n1952", "Sept.\n1957", "Sept.\n1962", "Sept.\n1967")) +
-      ylim(c(.6, 1)) +
-      theme_minimal(base_size = 22) +
-      theme(axis.text.x= element_text(angle=45), axis.title.x = element_blank())
-  }
-
-# telomere plt
-telomere_plt <- telomere_set %>% 
-  group_by(running_var) %>% 
-  summarise(sa = mean(ltl, na.rm = T), n =n()) %>% 
-  {ggplot(., aes(running_var, sa)) +
-      geom_point(color = "blue", alpha = .3) +
-      geom_point(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < m1$coefficients$bandwidth), color = "darkblue") +
-      geom_point(data=subset(., running_var < -m1$coefficients$bandwidth | running_var  > m1$coefficients$bandwidth), color = "blue", alpha = .3) +
-      geom_vline(xintercept = 0,linetype="dashed") +
-      geom_smooth(data=subset(., running_var < 0), method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
-      geom_smooth(data=subset(., running_var > 0), method='glm',formula=y~poly(x,3),se=F, color = "darkred") +
-      labs(y = "Leukocyte\nTelomere Length (LTL)", x = "Date of Birth in Months",  title = bquote('Raising of School Leaving Age 1973 Act (2'^nd~'Stage)')) + # bquote('Total Surface Area'~(mm^3))
-      scale_x_continuous(breaks=c(-120,-60,0,60,120),
-                         labels=c("Sept.\n1947", "Sept.\n1952", "Sept.\n1957", "Sept.\n1962", "Sept.\n1967")) +
-      # scale_y_continuous(breaks=c(164000, 168000, 172000, 176000),
-      #                    labels=c(expression("164000" ^mm2 ~ ""), "Sept.\n1952", "Sept.\n1957", "Sept.\n1962"),
-      #                    limits = c(164000, 176000))+ 
-      ylim(c(-.3, .3)) +
-      theme_minimal(base_size = 22) +
-      theme(axis.text.x= element_text(angle=45), axis.title.x = element_blank())}
-
-SI_plt1 <- Edu16_plt / telomere_plt + 
-  plot_annotation(tag_levels = 'a')
-
-# ggsave("~/Google Drive/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/SI_plt1.png",
-#        SI_plt1, width = 12, height = 10)
-
 telomere_plt_linear <- telomere_set %>% 
   group_by(running_var) %>% 
   summarise(sa = mean(ltl, na.rm = T), n =n()) %>% 
@@ -309,6 +264,47 @@ telomere_plt_linear <- telomere_set %>%
 
 # ggsave("~/Google Drive/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/Plt1.png",
 #        telomere_plt_linear, width = 14, height = 8, bg = "white")
+
+stage1Plt_inter <- telomere_set %>% 
+  group_by(running_var) %>% 
+  summarise(piEdu16 = mean(EduAge16, na.rm = T), n =n()) %>% 
+  {ggplot(., aes(running_var, piEdu16)) +
+      geom_point(color = "#34495E", alpha = .3, size = 3) +
+      geom_point(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < m1$coefficients$bandwidth), color = "black", alpha = .8, size = 3) +
+      geom_point(data=subset(., running_var < -m1$coefficients$bandwidth | running_var  > m1$coefficients$bandwidth), color = "#34495E", alpha = .3, size = 3) +
+      geom_vline(xintercept = 0,linetype="dashed") +
+      geom_smooth(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < 0), method='glm',formula=y~poly(x,1),se=F, color = "blue",  size = 1.5) +
+      geom_smooth(data=subset(., running_var > 0 & running_var  < m1$coefficients$bandwidth), method='glm',formula=y~poly(x,1),se=F, color = "blue",  size = 1.5) +
+      labs(y = bquote('Completed 16 yrs\nof Education (%)'), x = "Date of Birth in Months", title = bquote('Raising of School Leaving Age 1973 Act (1'^st~'Stage)')) + # bquote('Total Surface Area'~(mm^3))
+      scale_x_continuous(breaks=c(-120,-60,0,60,120),
+                         labels=c("Sept.\n1947", "Sept.\n1952", "Sept.\n1957", "Sept.\n1962", "Sept.\n1967")) +
+      ylim(c(-.3, .3)) +
+      theme_minimal(base_size = 30) +
+      theme(axis.text.x= element_text(angle=45), axis.title.x = element_blank())}
+
+stage2Plt_inter <- telomere_set %>% 
+  group_by(running_var) %>% 
+  summarise(mltl = mean(ltl, na.rm = T), n =n()) %>% 
+  {ggplot(., aes(running_var, mltl)) +
+      geom_point(color = "#34495E", alpha = .3, size = 3) +
+      geom_point(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < m1$coefficients$bandwidth), color = "black", alpha = .8, size = 3) +
+      geom_point(data=subset(., running_var < -m1$coefficients$bandwidth | running_var  > m1$coefficients$bandwidth), color = "#34495E", alpha = .3, size = 3) +
+      geom_vline(xintercept = 0,linetype="dashed") +
+      geom_smooth(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < 0), method='glm',formula=y~poly(x,1),se=F, color = "blue",  size = 1.5) +
+      geom_smooth(data=subset(., running_var > 0 & running_var  < m1$coefficients$bandwidth), method='glm',formula=y~poly(x,1),se=F, color = "blue",  size = 1.5) +
+      labs(y = "Leukocyte Telomere\nLength (LTL)", x = "Date of Birth in Months") +
+      scale_x_continuous(breaks=c(-120,-60,0,60,120),
+                         labels=c("Sept.\n1947", "Sept.\n1952", "Sept.\n1957", "Sept.\n1962", "Sept.\n1967")) +
+      ylim(c(-.3, .3)) +
+      theme_minimal(base_size = 30) +
+      theme(axis.text.x= element_text(angle=45), axis.title.x = element_blank())}
+
+StagedPlt <- stage1Plt_inter / stage2Plt_inter + 
+  plot_annotation(tag_levels = 'a')
+
+ggsave("~/Google Drive/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/SI_plt1.png",
+       SI_plt1, width = 14, height = 16)
+
 
 
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
