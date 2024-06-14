@@ -30,7 +30,7 @@
 if (!require(pacman)){install.packages('pacman')}
 pacman::p_load(tidyverse, lubridate, stringr, fastDummies, RDHonest,
                kableExtra, rddensity, patchwork, ggrain, report, 
-               rstanarm, bayestestR, insight)
+               rstanarm, bayestestR, insight,bayesplot)
 
 # using the new RDHonest syntax packageVersion("RDHonest")
 # attach to data with command K & the donders server
@@ -165,8 +165,6 @@ telomere_set$ltl_3SD <- telomere_set$ltl
 telomere_set$ltl_3SD[telomere_set$ltl_3SD>3 | telomere_set$ltl_3SD<(-3)] <- rep(NA, length(telomere_set$ltl_3SD[telomere_set$ltl_3SD>3 | telomere_set$ltl_3SD<(-3)]))
 sum(is.na(telomere_set$ltl_3SD))/length(telomere_set$ltl_3SD)
 
-
-
 # data.table::fwrite(telomere_set, "/Volumes/home/lifespan/nicjud/UKB/proc/telomere_set.csv")
 
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
@@ -183,7 +181,8 @@ sum(is.na(telomere_set$ltl_3SD))/length(telomere_set$ltl_3SD)
 
 # making a descp table of relevant vars
 options(knitr.kable.NA = '')
-report_table(telomere_set[, .(ltl, ltl_NoOuts, running_var, running_var.s, EduAge, EduAge.s, EduAge16)]) %>% 
+report_table(telomere_set[, .(ltl, ltl_3SD, running_var, running_var.s, visit_day_correct, visit_day_correct2, EduAge, EduAge.s, EduAge16)]) %>% 
+  mutate_if(is.numeric, round, 2) %>% 
   kbl(caption = "Descriptives Leukocyte Telomere Length (ltl)") %>%
   kable_styling("hover", full_width = F) %>%
   save_kable("~/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/descp_table.html")
@@ -213,14 +212,10 @@ m1_pre <- RDHonest(ltl | EduAge16  ~ running_var, data = telomere_set)
 m1 <- RDHonest(ltl | EduAge16 ~ running_var, data = telomere_set,
          T0 = m1_pre$coefficients$estimate)
 m1
-
 # outlier treated (very little of the data)
-m1_pre_treated <- RDHonest(ltl_3SD | EduAge16  ~ running_var, 
-                           data = telomere_set)
-m1_treated <- RDHonest(ltl_3SD | EduAge16  ~ running_var,
-                       data = telomere_set,
-                       T0 = m1_pre_treated$coefficients$estimate)
-m1_treated
+m2_pre <- RDHonest(ltl_3SD | EduAge16  ~ running_var, data = telomere_set)
+m2 <- RDHonest(ltl_3SD | EduAge16  ~ running_var, data = telomere_set, 
+                       T0 = m2_pre$coefficients$estimate)
 
 # check there is no association with visit date
 m0_1_pre <- RDHonest(visit_day_correct | EduAge16 ~ running_var, data = telomere_set)
@@ -229,13 +224,21 @@ m0_2_pre <- RDHonest(visit_day_correct2 | EduAge16 ~ running_var, data = telomer
 m0_2 <- RDHonest(visit_day_correct2 | EduAge16 ~ running_var, data = telomere_set, T0 = m0_2_pre$coefficients$estimate)
 m0_1;m0_2
 
-# with covariates and a cluster ID
-m1_pre_covs <- RDHonest(ltl | EduAge16  ~ running_var | visit_day_correct + visit_day_correct2, 
+# with covariates
+m3_pre <- RDHonest(ltl | EduAge16  ~ running_var | visit_day_correct + visit_day_correct2, 
                         data = telomere_set)
-m1_covs <- RDHonest(ltl | EduAge16  ~ running_var | visit_day_correct + visit_day_correct2, 
+m3 <- RDHonest(ltl | EduAge16  ~ running_var | visit_day_correct + visit_day_correct2, 
                     data = telomere_set,
-                    T0 = m1_pre_covs$coefficients$estimate)
-m1_covs
+                    T0 = m3_pre$coefficients$estimate)
+
+# all of them clustered
+m1_clust <- RDHonest(ltl | EduAge16 ~ running_var, data = telomere_set,
+               T0 = m1_pre$coefficients$estimate, clusterid = site, se.method="EHW")
+m2_clust <- RDHonest(ltl_3SD | EduAge16  ~ running_var, data = telomere_set, 
+               T0 = m2_pre$coefficients$estimate, clusterid = site, se.method="EHW")
+m3_clust <- RDHonest(ltl | EduAge16  ~ running_var | visit_day_correct + visit_day_correct2, 
+               data = telomere_set,
+               T0 = m3_pre$coefficients$estimate, clusterid = site, se.method="EHW")
 
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
 #### 1.3 plotting ####
@@ -346,13 +349,43 @@ rope(BayesMod_m5, range = c(-0.05, 0.05))
 
 # education increases & age decreases...
 # so both give more length... eventually age will just show up like it does here!
-m12 <- telomere_set[running_var %in% c(-12,-11,-10,-9,-8,-7,-6,-5,-4, -3, -2, -1, 0, 1, 2, 3, 4,5,6,7,8,9,10,11)][
-  , ROSLA := running_var >= 0
-]
+# m12 <- telomere_set[running_var %in% c(-12,-11,-10,-9,-8,-7,-6,-5,-4, -3, -2, -1, 0, 1, 2, 3, 4,5,6,7,8,9,10,11)][
+#   , ROSLA := running_var >= 0
+# ]
+# table(m12$ROSLA)
+# BayesMod_m12 <- stan_glm("telomerelogSTD_out ~ ROSLA", data = m12, iter = 40000, refresh=0, prior = normal(location = 0, scale = 1, autoscale = TRUE))
+# hdi(BayesMod_m12)
 
-table(m12$ROSLA)
-BayesMod_m12 <- stan_glm("telomerelogSTD_out ~ ROSLA", data = m12, iter = 40000, refresh=0, prior = normal(location = 0, scale = 1, autoscale = TRUE))
-hdi(BayesMod_m12)
 
+# Bayesian model diags (see brain script for parallel action)
 
-# you could totally, plot each year against each other in stem & leaf...
+# getting trace plots
+color_scheme_set("viridisA")
+m1_trace <- mcmc_trace(BayesMod_m1, pars = "ROSLATRUE") + 
+  labs(title = "Diagnostic Trace plot BayesLocal 1 month") + theme_minimal(base_size = 20)
+m5_trace <- mcmc_trace(BayesMod_m5, pars = "ROSLATRUE") + 
+  labs(title = "Diagnostic Trace plot BayesLocal 5 month") + theme_minimal(base_size = 20)
+
+tracePlt <- m1_trace / m5_trace + 
+  plot_annotation(tag_levels = 'a')
+# ggsave("~/Google Drive/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/SI_diag_trace.png",
+#        tracePlt, width = 14, height = 10)
+
+# plotting and saving posterior draws
+color_scheme_set("pink"); 
+m1_ppc <- ppc_dens_overlay(y = m1$ltl, yrep = posterior_predict(BayesMod_m1, draws = 300)) + 
+  labs(title = "Posterior draws BayesLocal (1 mnth)") + 
+  theme_minimal(base_size = 15) +
+  theme(legend.position = "bottom") +
+  xlim(-4,4)
+  
+m5_ppc <- ppc_dens_overlay(y = m5$ltl, yrep = posterior_predict(BayesMod_m5, draws = 300)) + 
+  labs(title = "Posterior draws BayesLocal (5 mnth)") + 
+  theme_minimal(base_size = 15) +
+  theme(legend.position = "bottom") +
+  xlim(-4,4)
+
+tracePlt <- m1_ppc + m5_ppc + 
+  plot_annotation(tag_levels = 'a')
+# ggsave("~/Google Drive/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/SI_diag_pcc.png",
+#        tracePlt, width = 10, height = 5)
