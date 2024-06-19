@@ -29,7 +29,7 @@
 
 if (!require(pacman)){install.packages('pacman')}
 pacman::p_load(tidyverse, lubridate, stringr, fastDummies, RDHonest,
-               kableExtra, rddensity, patchwork, ggrain, report, 
+               kableExtra, rddensity, patchwork, ggrain, report, ggpointdensity, viridis, ggnewscale,
                rstanarm, bayestestR, insight,bayesplot)
 
 # using the new RDHonest syntax packageVersion("RDHonest")
@@ -165,6 +165,16 @@ telomere_set$ltl_3SD <- telomere_set$ltl
 telomere_set$ltl_3SD[telomere_set$ltl_3SD>3 | telomere_set$ltl_3SD<(-3)] <- rep(NA, length(telomere_set$ltl_3SD[telomere_set$ltl_3SD>3 | telomere_set$ltl_3SD<(-3)]))
 sum(is.na(telomere_set$ltl_3SD))/length(telomere_set$ltl_3SD)
 
+# fixing sex
+
+telomere_set$sex <- as.character(telomere_set$sex)
+telomere_set$sex[telomere_set$sex ==0] <- rep("Female", length(telomere_set$sex[telomere_set$sex ==0]))
+telomere_set$sex[telomere_set$sex ==1] <- rep("Male", length(telomere_set$sex[telomere_set$sex ==1]))
+
+# age at visit in months
+telomere_set$age <- interval(ym(str_c(telomere_set$year,"-", telomere_set$month)), ymd(telomere_set$visit_date)) %/% months(1)
+
+
 # data.table::fwrite(telomere_set, "/Volumes/home/lifespan/nicjud/UKB/proc/telomere_set.csv")
 
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
@@ -177,11 +187,58 @@ sum(is.na(telomere_set$ltl_3SD))/length(telomere_set$ltl_3SD)
 # than do outlier treatment
 # than check visit date for percision
 
+# cor(telomere_set$running_var, telomere_set$age)
+# there is a .99 correlation between age in months & our running var
+
+# for the structured abstract & table
+psych::describe(telomere_set$age/12)
+
 # telomere_set <- data.table::fread("/Volumes/home/lifespan/nicjud/UKB/proc/telomere_set.csv")
+
+# basic SI plot of telomere lenght
+# basic_SIplt <- ggplot(telomere_set[ltl > -5 & ltl < 5], aes(running_var, ltl)) + 
+#   geom_point(alpha= .08, color = "darkblue") +
+#   geom_smooth(aes(color = sex), method = "lm", se = FALSE) +
+#   theme_minimal(base_size = 25) +
+#   labs(y = "Telomere Length (ltl)", x = "Running Variable (age)", color = "") +
+#   scale_color_brewer(palette = 'Dark2')
+# 
+# ggsave("~/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/SI_rawdatafig_MvF.png",
+#        basic_SIplt, width = 10, height = 6, bg = "white")
+
+# axises are limited to 5SD's this excluded the illustration of XXX subjects (XX%).
+dim(telomere_set)[1] - dim(telomere_set[ltl > -5 & ltl < 5])[1]
+
+
+# trying geom_point density again... 
+basic_SIplt_dens <- ggplot(telomere_set[ltl > -5 & ltl < 5], aes(age/12, ltl)) + 
+  geom_pointdensity(alpha= .2, adjust = .1) +
+  scale_color_viridis("Density", option = "C") +
+  new_scale_color() +
+  geom_smooth(aes(color = sex), method = "lm") +
+  scale_color_manual(values = c("#28B463", "#80DEEA")) +
+  # scale_fill_manual(values = c("#FFFFFF", "#FFFFFF")) +
+  theme_minimal(base_size = 25) +
+  labs(y = "Telomere Length (ltl)", x = "Age", color = "Sex", fill = "Density")
+
+ggsave("~/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/SI_rawdatafig_MvF.png",
+       basic_SIplt_dens, width = 10, height = 6, bg = "white")
+
+
+
+
+
+
+
+
+
+
+
+
 
 # making a descp table of relevant vars
 options(knitr.kable.NA = '')
-report_table(telomere_set[, .(ltl, ltl_3SD, running_var, running_var.s, visit_day_correct, visit_day_correct2, EduAge, EduAge.s, EduAge16)]) %>% 
+report_table(telomere_set[, .(ltl, ltl_3SD, running_var, running_var.s, visit_day_correct, visit_day_correct2, EduAge, EduAge.s, EduAge16, sex)]) %>% 
   mutate_if(is.numeric, round, 2) %>% 
   kbl(caption = "Descriptives Leukocyte Telomere Length (ltl)") %>%
   kable_styling("hover", full_width = F) %>%
@@ -197,6 +254,17 @@ confint(ltl_age); confint(ltl_edu)
 ltl_age.s <- lm(ltl ~ running_var.s, data = telomere_set)
 ltl_edu.s <- lm(ltl ~ EduAge.s, data = telomere_set)
 ltl_age.s$coefficients[2]; ltl_edu.s$coefficients[2]
+
+
+# checking running var vs age
+summary(lm(ltl ~ running_var, data = telomere_set))
+summary(lm(ltl ~ age, data = telomere_set))
+
+
+telomere_set$age.s <- as.numeric(scale(telomere_set$age))
+summary(lm(ltl ~ running_var.s, data = telomere_set))
+summary(lm(ltl ~ age.s, data = telomere_set))
+
 
 # but there is heterogeneity in recruitment
 hist(telomere_set$visit_day_correct/365)
