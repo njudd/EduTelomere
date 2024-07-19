@@ -215,26 +215,17 @@ basic_SIplt_dens <- ggplot(telomere_set[ltl > -5 & ltl < 5], aes(age/12, ltl)) +
   geom_pointdensity(alpha= .2, adjust = .1) +
   scale_color_viridis("Density", option = "C") +
   new_scale_color() +
-  geom_smooth(aes(color = sex), method = "lm") +
-  scale_color_manual(values = c("#28B463", "#80DEEA")) +
-  # scale_fill_manual(values = c("#FFFFFF", "#FFFFFF")) +
-  theme_minimal(base_size = 25) +
-  labs(y = "Telomere Length (ltl)", x = "Age", color = "Sex", fill = "Density")
+  geom_smooth(method = "lm", color = "black", size = 1.5) +
+  # scale_color_manual(values = c("#28B463", "#80DEEA")) +
+  theme_minimal(base_size = 30) +
+  labs(y = "Telomere Length\n(Std.)", x = "Age", color = "Sex", fill = "Density") + 
+  theme(legend.position="none") +
+  scale_x_continuous(breaks=c(42, 47, 52, 57, 62),
+                     labels=c("Age\n42", "Age\n47", "Age\n52", "Age\n57", "Age\n62")) +
+  theme(axis.text.x= element_text(angle=45), axis.title.x = element_blank())
 
-ggsave("~/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/SI_rawdatafig_MvF.png",
-       basic_SIplt_dens, width = 10, height = 6, bg = "white")
-
-
-
-
-
-
-
-
-
-
-
-
+# ggsave("~/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/SI_rawdatafig_MvF.png",
+#        basic_SIplt_dens, width = 10, height = 6, bg = "white")
 
 # making a descp table of relevant vars
 options(knitr.kable.NA = '')
@@ -316,14 +307,14 @@ telomere_plt_linear <- telomere_set %>%
   group_by(running_var) %>% 
   summarise(sa = mean(ltl, na.rm = T), n =n()) %>% 
   {ggplot(., aes(running_var, sa)) +
-      geom_point(color = "#34495E", alpha = .3, size = 3) +
-      geom_point(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < m1$coefficients$bandwidth), color = "black", alpha = .8, size = 3) +
-      geom_point(data=subset(., running_var < -m1$coefficients$bandwidth | running_var  > m1$coefficients$bandwidth), color = "#34495E", alpha = .3, size = 3) +
+      geom_point(color = "blue", alpha = .3, size = 3) +
+      geom_point(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < m1$coefficients$bandwidth), color = "darkblue", alpha = .8, size = 3) +
+      geom_point(data=subset(., running_var < -m1$coefficients$bandwidth | running_var  > m1$coefficients$bandwidth), color = "blue", alpha = .3, size = 3) +
       geom_vline(xintercept = 0,linetype="dashed") +
-      geom_smooth(data=subset(., running_var > -m1$coefficients$bandwidth & running_var  < m1$coefficients$bandwidth), method='glm',formula=y~poly(x,1),se=F, color = "blue",  size = 1.5) +
+      geom_smooth(data=subset(., running_var > -m1$coefficients$bandwidth & running_var  < m1$coefficients$bandwidth), method='glm',formula=y~poly(x,1),se=F, color = "black",  size = 1.5) +
       # geom_smooth(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < 0), method='glm',formula=y~poly(x,1),se=F, color = "blue",  size = 1.5) +
       # geom_smooth(data=subset(., running_var > 0 & running_var  < m1$coefficients$bandwidth), method='glm',formula=y~poly(x,1),se=F, color = "blue",  size = 1.5) +
-      labs(y = "Leukocyte Telomere\nLength (LTL)", x = "Date of Birth in Months") + # bquote('Total Surface Area'~(mm^3))
+      labs(y = "Telomere Length\n(Std. monthly)", x = "Date of Birth in Months") + # bquote('Total Surface Area'~(mm^3))
       scale_x_continuous(breaks=c(-120,-60,0,60,120),
                          labels=c("Sept.\n1947", "Sept.\n1952", "Sept.\n1957", "Sept.\n1962", "Sept.\n1967")) +
       # scale_y_continuous(breaks=c(164000, 168000, 172000, 176000),
@@ -335,6 +326,13 @@ telomere_plt_linear <- telomere_set %>%
 
 # ggsave("~/Google Drive/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/Plt1.png",
 #        telomere_plt_linear, width = 14, height = 8, bg = "white")
+
+pnas_plt <- basic_SIplt_dens / telomere_plt_linear + 
+  plot_annotation(tag_levels = 'a')
+ggsave("~/Google Drive/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/PNAS_Fig1.png",
+       pnas_plt, width = 14, height = 16)
+
+
 
 stage1Plt_inter <- telomere_set %>% 
   group_by(running_var) %>% 
