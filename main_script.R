@@ -389,6 +389,7 @@ bayesfactor_parameters(BayesMod_m1)
 BF_BayesMod_m1<- bayesfactor_parameters(BayesMod_m1)
 
 
+
 1/0.023
 
 m5 <- telomere_set[running_var %in% c(-5,-4, -3, -2, -1, 0, 1, 2, 3, 4)][
