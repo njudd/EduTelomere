@@ -17,7 +17,6 @@ ltl_edu <- lm(ltl ~ EduAge, data = telomere_set)
 ltl_age.s <- lm(ltl ~ running_var.s, data = telomere_set)
 ltl_edu.s <- lm(ltl ~ EduAge.s, data = telomere_set)
 
-
 # could you see the effect of a day with the visit day error?
 
 
@@ -176,6 +175,49 @@ rdpower(sim_Z_months, fuzzy = df$fuzzy, tau = .4)
 
 
 df$running_var_group <- cut(df$running_var, breaks = seq(-3360, 3360, by = 28))
+
+
+
+
+######### playspace with manual power
+
+rdr <- rdrobust(telomere_set$ltl, telomere_set$running_var, fuzzy = telomere_set$EduAge16)
+
+samph <- rdr$bws[1]
+
+sampsi.l <- rdr$N_h[1]
+sampsi.r <- rdr$N_h[2]
+
+bias.l <- rdr$bias[1]/(rdr$bws[1]^2)
+bias.r <- rdr$bias[2]/(rdr$bws[2]^2)
+
+VL <- rdr$V_rb_l
+VR <- rdr$V_rb_r
+
+N <- sum(rdr$N)
+
+Vl.rb <- N*rdr$bws[1]*VL[1,1]
+Vr.rb <- N*rdr$bws[1]*VR[1,1]
+
+aux <- rdpower(data=Z,tau=.2,bias=c(bias.l,bias.r),variance=c(Vl.rb,Vr.rb),samph=samph,sampsi=c(sampsi.l,sampsi.r))
+
+
+# increasing the variance by 20%
+aux <- rdpower(data=Z,tau=.2,variance=c(Vl.rb*1.2,Vr.rb*1.2))
+
+# you want less variance obviously...
+
+rdpower(data=Z,tau=.2,variance=c(Vl.rb*.5,Vr.rb*.5))
+
+
+# https://stats.stackexchange.com/questions/93303/variance-covariance-matrix-interpretation
+
+
+
+
+
+
+
 
 
 
