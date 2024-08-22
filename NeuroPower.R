@@ -6,6 +6,9 @@
 
 ### notes
 
+# example script: https://github.com/rdpackages/rdpower/blob/master/R/rdpower_illustration.R
+# paper: https://rdpackages.github.io/references/Cattaneo-Titiunik-VazquezBare_2019_Stata.pdf#page=18.40
+
 # https://khakieconomics.github.io/2017/11/26/Bayesian_iv.html
 # Bayesian IV-power
 
@@ -95,7 +98,7 @@ pwr_sa <- data.frame(stage2 = stage2,
                                                                       y = sa$SA, 
                                                                       running = sa$running_var, 
                                                                       stage_two = sa$EduAge16)))
-fwrite(pwr_sa, "~/projects/EduTelomere/temp_data/pwr_sa.csv")
+# fwrite(pwr_sa, "~/projects/EduTelomere/temp_data/pwr_sa.csv")
 
 # there is a significant slow down in the function after adding checks and more args...
 
@@ -109,7 +112,7 @@ pwr_ltl <- data.frame(stage2 = stage2,
                                                             running = telomere_set$running_var, 
                                                             stage_two = telomere_set$EduAge16)))
 
-fwrite(pwr_ltl, "~/projects/EduTelomere/temp_data/pwr_ltl.csv")
+# fwrite(pwr_ltl, "~/projects/EduTelomere/temp_data/pwr_ltl.csv")
 
 
 
