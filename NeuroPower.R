@@ -2,6 +2,16 @@
 # Dr. Nicholas Judd
 # 21-08-24 njudd.com
 
+
+
+### notes
+
+# https://khakieconomics.github.io/2017/11/26/Bayesian_iv.html
+# Bayesian IV-power
+
+
+
+
 if (!require(pacman)){install.packages('pacman')}
 pacman::p_load(tidyverse, lubridate, stringr, lm.beta,
                RDHonest, rdrobust, rdpower, data.table)
@@ -76,6 +86,8 @@ secound_stage_STDpower <- function(y = NULL, running = NULL, stage_two = NULL, p
 stage2 <- rep(seq(0,1, by = .05), each = 21)
 std_eff<- rep(seq(0,1, by = .05), times = 21)
 
+# doing the rdrohust model for Surface Area
+rdr_SA <- rdrobust(sa$SA, sa$running_var, fuzzy = sa$EduAge16)
 pwr_sa <- data.frame(stage2 = stage2,
                         std_eff = std_eff,
                         pwr = map2_dbl(stage2, std_eff, 
@@ -83,11 +95,12 @@ pwr_sa <- data.frame(stage2 = stage2,
                                                                       y = sa$SA, 
                                                                       running = sa$running_var, 
                                                                       stage_two = sa$EduAge16)))
+fwrite(pwr_sa, "~/projects/EduTelomere/temp_data/pwr_sa.csv")
 
+# there is a significant slow down in the function after adding checks and more args...
 
-rdr_SA <- rdrobust(sa$SA, sa$running_var, fuzzy = sa$EduAge16)
-
-# this didn't work; maybe because of NA's...
+# doing the rdrohust model for ltl
+rdr_ltl <- rdrobust(telomere_set$ltl, telomere_set$running_var, fuzzy = telomere_set$EduAge16)
 pwr_ltl <- data.frame(stage2 = stage2,
                      std_eff = std_eff,
                      pwr = map2_dbl(stage2, std_eff, 
@@ -96,7 +109,9 @@ pwr_ltl <- data.frame(stage2 = stage2,
                                                             running = telomere_set$running_var, 
                                                             stage_two = telomere_set$EduAge16)))
 
-rdr_ltl <- rdrobust(telomere_set$ltl, telomere_set$running_var, fuzzy = telomere_set$EduAge16)
+fwrite(pwr_ltl, "~/projects/EduTelomere/temp_data/pwr_ltl.csv")
+
+
 
 # graph of neuro power, was gonna do power curves but than Copilot recommended this & I like it!
 pwr_plt_neuro <-ggplot(pwrSTD_df, aes(x = stage2, y = std_eff, fill = power_.5sd))+
@@ -125,8 +140,6 @@ pwr_plt_ltl <- ggplot(pwrSTD_df_TELOMERE, aes(x = stage2, y = std_eff, fill = po
        y = "Standardized effect size (s.d.)",
        fill = "Power (RBC)",
        caption = "red line: 2nd stage for neuro \n white line: 2nd stage for telomere")
-
-
 
 # comparison from neuro to ltl
 
