@@ -98,7 +98,7 @@ pwr_ltl <- data.frame(stage2 = stage2,
 
 rdr_ltl <- rdrobust(telomere_set$ltl, telomere_set$running_var, fuzzy = telomere_set$EduAge16)
 
-
+# graph of neuro power, was gonna do power curves but than Copilot recommended this & I like it!
 pwr_plt_neuro <-ggplot(pwrSTD_df, aes(x = stage2, y = std_eff, fill = power_.5sd))+
   geom_tile()+
   scale_fill_viridis_c()+
@@ -112,37 +112,7 @@ pwr_plt_neuro <-ggplot(pwrSTD_df, aes(x = stage2, y = std_eff, fill = power_.5sd
        fill = "Power (RBC)",
        caption = "red line: 2nd stage for neuro \n white line: 2nd stage for telomere")
 
-
-
 # do the same graph but with ltl as the outcome
-
-
-
-
-secound_stage_STDpower_TELOMERE <- function(pi_notgoing = .5, std_eff = .5){
-  
-  pi_going <- 1-pi_notgoing # takes the arg of those who don't stay in school
-  
-  fake_2ndStage <- telomere_set$EduAge16
-  fake_2ndStage[telomere_set$running_var <0] <- # replace those before the Nat Exp
-    sample(0:1, # either false or true
-           length(fake_2ndStage[telomere_set$running_var <0]), replace = T, 
-           prob = c(pi_notgoing, pi_going))
-  
-  y_STD <- as.numeric(scale(telomere_set$ltl)) # it is already std
-  
-  pwr <-rdpower(data=cbind(y_STD, telomere_set$running_var), fuzzy = fake_2ndStage, tau = std_eff)$power.rbc
-  return(pwr)
-}
-
-pwr_ltl <- data.frame(stage2 = stage2,
-                        std_eff = std_eff,
-                        pwr = map2_dbl(stage2, std_eff, 
-                                              ~secound_stage_STDpower_TELOMERE(pi_notgoing = .x, 
-                                                                      std_eff = .y)))
-
-
-
 pwr_plt_ltl <- ggplot(pwrSTD_df_TELOMERE, aes(x = stage2, y = std_eff, fill = power_.5sd))+
   geom_tile()+
   scale_fill_viridis_c()+
