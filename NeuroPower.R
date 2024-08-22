@@ -6,7 +6,9 @@ if (!require(pacman)){install.packages('pacman')}
 pacman::p_load(tidyverse, lubridate, stringr, lm.beta,
                RDHonest, rdrobust, rdpower, data.table)
 
-
+telomere_set <- data.table::fread("/Volumes/home/lifespan/nicjud/UKB/proc/telomere_set.csv")
+# telomere_set <- telomere_set[complete.cases(telomere_set[, .(ltl, running_var, EduAge16)]),] # no missingness allows in Y, running, or IV
+# ^there already is none!
 
 neuro_set <- fread("/Volumes/home/lifespan/nicjud/UKB/proc/20240222_fullset.csv")
 
@@ -47,41 +49,54 @@ fake_2ndStage <- sa$EduAge16
 fake_2ndStage[sa$running_var <0] <- sample(0:1, length(fake_2ndStage[sa$running_var <0]), replace = T, prob = c(.5,.5))
 rdpower(data=cbind(sa$SA, sa$running_var), fuzzy = fake_2ndStage) # power =.998
 
-# illustrating this effect, with standardizing the outcome (Y)
+# illustrating this effect; with standardizing the outcome (Y)
 
-secound_stage_STDpower <- function(pi_notgoing = .5, std_eff = .5){
+# function to get power, takes the percentage of people before the NatExp not going & a std effect
+secound_stage_STDpower <- function(y = NULL, running = NULL, stage_two = NULL, pi_notgoing = .5, std_eff = .5){
   
-  pi_going <- 1-pi_notgoing # takes the arg of those who don't stay in school
-  
-  fake_2ndStage <- sa$EduAge16
-  fake_2ndStage[sa$running_var <0] <- # replace those before the Nat Exp
-    sample(0:1, # either false or true
-           length(fake_2ndStage[sa$running_var <0]), replace = T, 
-           prob = c(pi_notgoing, pi_going))
-  
-  y_STD <- as.numeric(scale(sa$SA))
-  
-  pwr <-rdpower(data=cbind(y_STD, sa$running_var), fuzzy = fake_2ndStage, tau = std_eff)$power.rbc
-  return(pwr)
+  # if none of y, running or stage two are null & they have the same dimensions...
+  if (is.null(y) + is.null(running) + is.null(stage_two) == 0 && dim(table(lengths(list(y, running, stage_two)))) == 1){
+    pi_going <- 1-pi_notgoing # % going before the natexp
+    
+    # making a fake 2nd stage var
+    stage_two[running <0] <- # replace those values before the Nat Exp on stage_two
+      sample(0:1, # either false or true
+             length(stage_two[running <0]), replace = T, 
+             prob = c(pi_notgoing, pi_going)) # with the probabilities we want
+    
+    y_STD <- as.numeric(scale(y)) # scaling the outcome, Y variable
+    
+    pwr <-rdpower(data=cbind(y_STD, running), fuzzy = stage_two, tau = std_eff)$power.rbc
+    return(pwr)
+  } else
+    print("Error: either missing an y (outcome), a x (running) or secound stage (stage_two) argument OR they are incompatible dimensions try length()")
 }
 
-
-# you want by = .05
-
-
-my_seq <- seq(0,1, by = .05)
-
-stage2 <- rep(my_seq, each = 21)
-std_eff<- rep(my_seq, times = 21)
+# I want to get all values of power for all combinations from 0-1 in steps of .05 of pi_notgoing and std_eff
+stage2 <- rep(seq(0,1, by = .05), each = 21)
+std_eff<- rep(seq(0,1, by = .05), times = 21)
 
 pwr_sa <- data.frame(stage2 = stage2,
                         std_eff = std_eff,
                         pwr = map2_dbl(stage2, std_eff, 
-                                              ~secound_stage_STDpower(pi_notgoing = .x, 
-                                                                      std_eff = .y)))
+                                              ~secound_stage_STDpower(pi_notgoing = .x, std_eff = .y,
+                                                                      y = sa$SA, 
+                                                                      running = sa$running_var, 
+                                                                      stage_two = sa$EduAge16)))
 
 
 rdr_SA <- rdrobust(sa$SA, sa$running_var, fuzzy = sa$EduAge16)
+
+# this didn't work; maybe because of NA's...
+pwr_ltl <- data.frame(stage2 = stage2,
+                     std_eff = std_eff,
+                     pwr = map2_dbl(stage2, std_eff, 
+                                    ~secound_stage_STDpower(pi_notgoing = .x, std_eff = .y,
+                                                            y = telomere_set$ltl, 
+                                                            running = telomere_set$running_var, 
+                                                            stage_two = telomere_set$EduAge16)))
+
+rdr_ltl <- rdrobust(telomere_set$ltl, telomere_set$running_var, fuzzy = telomere_set$EduAge16)
 
 
 pwr_plt_neuro <-ggplot(pwrSTD_df, aes(x = stage2, y = std_eff, fill = power_.5sd))+
@@ -101,7 +116,6 @@ pwr_plt_neuro <-ggplot(pwrSTD_df, aes(x = stage2, y = std_eff, fill = power_.5sd
 
 # do the same graph but with ltl as the outcome
 
-telomere_set <- data.table::fread("/Volumes/home/lifespan/nicjud/UKB/proc/telomere_set.csv")
 
 
 
@@ -124,11 +138,10 @@ secound_stage_STDpower_TELOMERE <- function(pi_notgoing = .5, std_eff = .5){
 pwr_ltl <- data.frame(stage2 = stage2,
                         std_eff = std_eff,
                         pwr = map2_dbl(stage2, std_eff, 
-                                              ~secound_stage_STDpower(pi_notgoing = .x, 
+                                              ~secound_stage_STDpower_TELOMERE(pi_notgoing = .x, 
                                                                       std_eff = .y)))
 
 
-rdr_ltl <- rdrobust(telomere_set$ltl, telomere_set$running_var, fuzzy = telomere_set$EduAge16)
 
 pwr_plt_ltl <- ggplot(pwrSTD_df_TELOMERE, aes(x = stage2, y = std_eff, fill = power_.5sd))+
   geom_tile()+
