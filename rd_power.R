@@ -30,7 +30,6 @@ summary(lm(ltl ~ running_var + visit_day_correct, data = telomere_set))
 # there is almost no correlation between visit date & running var
 cor(telomere_set$visit_day_correct, telomere_set$running_var)
 
-
 summary(lm(ltl ~ visit_day_correct, data = telomere_set))
 summary(lm(ltl ~ visit_day_correct.s, data = telomere_set))
 
@@ -80,11 +79,21 @@ ggplot(telomere_set, aes(x = visit_day_correct, y = ltl)) +
 
 neuro_set <- data.table::fread("/Volumes/home/lifespan/nicjud/UKB/proc/20240222_fullset.csv")
 neuro_set <- as.data.frame(neuro_set)
-Z_neuro <- neuro_set[c('TBV_norm','running_var')]
-# data table is wierd where you have to order it the other way around
 
-rdpower(Z_neuro, fuzzy = neuro_set$EduAge16, tau = .2)
+neuro_set$CT.s <- as.numeric(scale(neuro_set$CT))
+neuro_set$SA.s <- as.numeric(scale(neuro_set$SA))
 
+# CT
+rdpower(neuro_set[c('CT.s','running_var')], fuzzy = neuro_set$EduAge16, tau = .5)
+
+rdpower(neuro_set[c('CT','running_var')], fuzzy = neuro_set$EduAge16, tau = .5)
+
+
+# SA
+rdpower(neuro_set[c('SA.s','running_var')], fuzzy = neuro_set$EduAge16, tau = 1)
+
+var(neuro_set$CT.s, na.rm = T)
+var(neuro_set$SA.s, na.rm = T)
 
 
 # you need to understand why it changes 
@@ -215,8 +224,59 @@ rdpower(data=Z,tau=.2,variance=c(Vl.rb*.5,Vr.rb*.5))
 
 
 
+# you could make UKB even more discrete to see how that effects power negatively
+# for instance by pushing months together (might want to do this in a way were it is equal)
+# e.g., Sep gets Aug & Oct, Dec gets Nov & Jan, etc.
 
 
+
+
+
+###### standard RCT power with only 10% treated impacted by .2 SD
+
+
+rct_power <- function(n = 100, eff = .2, effectly_treated = .1){
+  
+  
+  y_if_control <- rnorm(n)
+  
+  ten_index <- sample(c(0,1), n, replace = T, prob = c(1-effectly_treated, effectly_treated))
+  
+  y_if_treated <- y_if_control
+  y_if_treated[as.logical(ten_index)] <- y_if_treated[as.logical(ten_index)] + eff
+  
+  
+  z <- sample(rep(c(0,1), n/2))
+  y <- ifelse(z==1, y_if_treated, y_if_control)
+  fake <- data.frame(y, z)
+  
+  summary(lm(y ~ z, data = fake))$coefficients[2,4]
+  
+
+}
+
+sum(map_dbl(1:1000, ~rct_power(n = 1000, eff = .4, effectly_treated = .1)) < .05)/1000
+
+
+
+
+n = 50000
+effectly_treated = .1
+eff = .2
+y_if_control <- rnorm(n)
+
+ten_index <- sample(c(0,1), n, replace = T, prob = c(1-effectly_treated, effectly_treated))
+
+y_if_treated <- y_if_control
+y_if_treated[as.logical(ten_index)] <- y_if_treated[as.logical(ten_index)] + eff
+
+
+z <- sample(rep(c(0,1), n/2))
+y <- ifelse(z==1, y_if_treated, y_if_control)
+fake <- data.frame(y, z)
+
+
+ggplot(fake, aes(group = z, x = y)) + geom_density()
 
 
 
