@@ -1,5 +1,186 @@
 # Nicholas Judd
 # 2024-10-19
+
+
+# stan links from MEA
+# https://mc-stan.org/users/documentation/
+# https://bruno.nicenboim.me/bayescogsci/ch-introstan.html#stan-syntax
+
+
+
+
+# https://khakieconomics.github.io/2017/11/26/Bayesian_iv.html
+
+# https://rpsychologist.com/adherence-analysis-IV-brms
+
+
+# https://david-salazar.github.io/posts/bayesian-statistics/2020-06-03-bayesian-instrumental-variable-regression.html
+
+
+
+
+# https://www.r-bloggers.com/2014/01/instrumental-variables-simulation/
+library(MASS)
+# we are really generating x* and c and using a common variance
+xStarAndC <- mvrnorm(1000, c(20, 15), matrix(c(1, 0.5, 0.5, 1), 2, 2))
+xStar <- xStarAndC[, 1]
+c <- xStarAndC[, 2]
+
+z <- rnorm(1000)
+x <- xStar + z
+
+# now lets simulate the response var
+# using 1 makes it easy to estimate how 'wrong' an estimator is and toss
+# some noise on y
+y <- 1 + x + c + rnorm(1000, 0, 0.5)
+
+
+
+cor(x, c); cor(z, c)
+
+
+lm(y ~ x + c)
+
+lm(y ~ x) # incorrectly estimated...
+
+
+# now lets use the IV estimator
+xHat <- lm(x ~ z)$fitted.values
+lm(y ~ xHat)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+set.seed(42)
+# Load the stan library
+library(rstan)
+options(mc.cores = parallel::detectCores())
+
+# Compile the model
+compiled_model <- stan_model("~/projects/EduTelomere/Bayes2SLS/classic_iv_hierarchical_prior.stan")
+
+# Let's make some fake data
+
+N <- 1000 # Number of observations
+PX <- 1 # Number of exogenous variables
+PZ <- 1 # Number of instruments
+J <- 10 # Number of previous studies
+
+# Previous study parameters, drawn from the prior
+beta_hat <- rnorm(1, 0, 1)
+sigma_beta <- truncnorm::rtruncnorm(1, a = 0)
+beta_j <- rnorm(J, beta_hat, sigma_beta)
+se_j <- truncnorm::rtruncnorm(J, a = 0)
+b_j <- rnorm(J, beta_j, se_j)
+
+# Exogenous variables (make them correlated with a random correlation matrix)
+X_exog <- MASS::mvrnorm(N, rep(0, PX), cor(matrix(rnorm(PX*(PX+5)), PX+5, PX)))
+
+# We have to feed it some dummy endogenous variables but these won't make a difference
+X_endog <- rnorm(N)
+
+# Some fake instruments
+Z <- MASS::mvrnorm(N, rep(0, PZ), cor(matrix(rnorm(PZ*(PZ+5)), PZ+5, PZ)))
+
+Y_outcome <- rnorm(N)
+
+data_list <- list(N = N, PX = PX, PZ = PZ, J = J,
+                  b_j = b_j, se_j = se_j, X_exog = X_exog, X_endog = X_endog, 
+                  Z = Z, Y_outcome = Y_outcome, 
+                  run_estimation = 0)
+
+
+
+
+draws_from_model <- sampling(compiled_model, data = data_list, iter = 50, chains = 1)
+
+
+
+# Let's use the next to last non-warm-up draw as our fake data (draw 24)
+y_sim <- extract(draws_from_model, pars = "y_sim")[[1]][24,]
+x_endog <- extract(draws_from_model, pars = "x_endog")[[1]][24,]
+true_beta <- extract(draws_from_model, pars = "beta_ours")[[1]][24]
+
+# Now let's make a new data list
+data_list_2 <- data_list
+data_list_2$X_endog <- x_endog
+data_list_2$Y_outcome <- y_sim
+data_list_2$run_estimation <- 1
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # https://gist.github.com/rmcelreath/87ab316cfb1be10fb1057c47b20317d3
 
 
