@@ -294,13 +294,19 @@ lr_w5 <- rdrandinf(Y = telomere_set$ltl, R = telomere_set$running_var,
                    wmasspoints = TRUE, wl=-5, wr=4, d = .06)
 
 
-ggplot(telomere_set[running_var %in% c(-1,0)], aes(as.character(running_var),ltl_3SD, fill = as.character(running_var))) +
+Rain_1m <- ggplot(telomere_set[running_var %in% c(-1,0)], aes(as.character(running_var),ltl_3SD, fill = as.character(running_var))) +
   geom_rain(rain.side = "f1x1", alpha = .8) +
   scale_fill_brewer(palette = 'Dark2') +
   ggsignif::geom_signif(
     comparisons = list(c("-1", "0")),
     map_signif_level = TRUE) +
-  theme_minimal()
+  theme_minimal(base_size = 25) +
+  theme(legend.position = "none") +
+  labs(y = "Telomere Length", x = "") + 
+  scale_x_discrete(labels = c("Aug 1957 (- ROSLA)", "Sept 1957 (+ ROSLA)"))
+
+# ggsave("~/Google Drive/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/SI_Rain_1m.png",
+#        Rain_1m, width = 14, height = 10, bg = "white")
 
 
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
