@@ -186,8 +186,12 @@ telomere_set$age <- interval(ym(str_c(telomere_set$year,"-", telomere_set$month)
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
 #### 1.2 Loading cleaned/saved data   ####
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
-# telomere_set <- data.table::fread("/Volumes/home/lifespan/nicjud/UKB/proc/telomere_set.csv")
 
+# telomere_set <- data.table::fread("/Volumes/home/lifespan/nicjud/UKB/proc/telomere_set.csv")
+# pacman::p_load(tidyverse, lubridate, stringr, fastDummies, RDHonest, # using the new RDHonest syntax packageVersion("RDHonest")
+#                kableExtra, rddensity, patchwork, ggrain, report, ggpointdensity, viridis, ggnewscale,
+#                rstanarm, bayestestR, insight,bayesplot, rdlocrand)
+# options(scipen=999) # no scientific notation
 
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
 #### 1.3 Basic descriptives and lm's   ####
@@ -285,6 +289,8 @@ ltl_age_cor$coefficients[2]*12; ltl_edu_cor$coefficients[2]
 
 telomere_set$EduAge16 <- as.numeric(telomere_set$EduAge16)
 
+set.seed(42)
+
 lr_w1 <- rdrandinf(Y = telomere_set$ltl, R = telomere_set$running_var, 
           fuzzy = telomere_set$EduAge16, #statistic = "tsls",
           wmasspoints = TRUE, wl=c(-1), wr=c(0), d = .13)
@@ -317,12 +323,41 @@ Rain_1m <- ggplot(telomere_set[running_var %in% c(-1,0)], aes(as.character(runni
 m1 <- telomere_set[running_var %in% c(-1,0)][
   , ROSLA := running_var >= 0
 ]
-table(m1$ROSLA)
+# table(m1$ROSLA)
+
+
 BayesMod_m1 <- stan_glm("ltl ~ ROSLA", data = m1, iter = 40000, refresh=0, prior = normal(location = 0, scale = 1, autoscale = TRUE))
 round(mean(get_parameters(BayesMod_m1)[,2]), 4)
 hdi(BayesMod_m1)
 bayesfactor_parameters(BayesMod_m1)
 BF_BayesMod_m1<- bayesfactor_parameters(BayesMod_m1)
+
+
+quantile(get_parameters(BayesMod_m1)[,2], probs=c(.025,.975))
+hdi(BayesMod_m1)
+
+
+
+BayesMod_m1_p.5 <- stan_glm("ltl ~ ROSLA", data = m1, iter = 40000, refresh=0, prior = normal(location = 0, scale = .5, autoscale = TRUE))
+BayesMod_m1_p1.5 <- stan_glm("ltl ~ ROSLA", data = m1, iter = 40000, refresh=0, prior = normal(location = 0, scale = 1.5, autoscale = TRUE))
+
+ROSLA_posterior_BayesMod_m1_p1 <- get_parameters(BayesMod_m1)[,2]
+ROSLA_posterior_BayesMod_m1_p.5 <- get_parameters(BayesMod_m1_p.5)[,2]
+ROSLA_posterior_BayesMod_m1_p1.5 <- get_parameters(BayesMod_m1_p1.5)[,2]
+
+
+
+
+
+
+round(sd(get_parameters(BayesMod_m1)[,2]), 4)
+
+
+summary(BayesMod_m1_p.5); summary(BayesMod_m1); summary(BayesMod_m1_p1.5)
+
+
+rope(BayesMod_m1, range = c(-0.10, 0.10))
+rope(BayesMod_m1, range = c(-0.05, 0.05))
 
 
 
@@ -339,8 +374,51 @@ BayesMod_m5 <- stan_glm("ltl ~ ROSLA", data = m5, iter = 40000, refresh=0, prior
 round(mean(get_parameters(BayesMod_m5)[,2]), 4)
 hdi(BayesMod_m5)
 BF_BayesMod_m5<- bayesfactor_parameters(BayesMod_m5)
-
 1/0.012
+
+BayesMod_m5_p.5 <- stan_glm("ltl ~ ROSLA", data = m5, iter = 40000, refresh=0, prior = normal(location = 0, scale = .5, autoscale = TRUE))
+BayesMod_m5_p1.5 <- stan_glm("ltl ~ ROSLA", data = m5, iter = 40000, refresh=0, prior = normal(location = 0, scale = 1.5, autoscale = TRUE))
+
+
+
+ROSLA_posterior_BayesMod_m5_p1 <- get_parameters(BayesMod_m5)[,2]
+ROSLA_posterior_BayesMod_m5_p.5 <- get_parameters(BayesMod_m5_p.5)[,2]
+ROSLA_posterior_BayesMod_m5_p1.5 <- get_parameters(BayesMod_m5_p1.5)[,2]
+
+
+
+names <- c(rep('m1_p.5', 80000), rep('m1_p1', 80000), rep('m1_p1.5', 80000), 
+  rep('m5_p.5', 80000),rep('m5_p1', 80000), rep('m5_p1.5', 80000))
+
+values <- c(ROSLA_posterior_BayesMod_m1_p.5, ROSLA_posterior_BayesMod_m1_p1, ROSLA_posterior_BayesMod_m1_p1.5,
+            ROSLA_posterior_BayesMod_m5_p.5, ROSLA_posterior_BayesMod_m5_p1, ROSLA_posterior_BayesMod_m5_p1.5)
+
+data.frame(names = names, values= values) %>% 
+  group_by(names) %>% 
+  summarise(mean = mean(values), sd = sd(values), lower = quantile(values, .025), upper = quantile(values, .975))
+
+
+BF_BayesMod_m5_p.5 <- bayesfactor_parameters(BayesMod_m5_p.5)
+BF_BayesMod_m5_p1.5 <- bayesfactor_parameters(BayesMod_m5_p1.5)
+
+BF_BayesMod_m1_p.5 <- bayesfactor_parameters(BayesMod_m1_p.5)
+BF_BayesMod_m1_p1.5 <- bayesfactor_parameters(BayesMod_m1_p1.5)
+
+rope(BayesMod_m1_p.5, range = c(-0.1, 0.1))
+rope(BayesMod_m1, range = c(-0.1, 0.1))
+rope(BayesMod_m1_p1.5, range = c(-0.1, 0.1))
+rope(BayesMod_m5_p.5, range = c(-0.1, 0.1))
+rope(BayesMod_m5, range = c(-0.1, 0.1))
+rope(BayesMod_m5_p1.5, range = c(-0.1, 0.1))
+
+rope(BayesMod_m1_p.5, range = c(-0.05, 0.05))
+rope(BayesMod_m1, range = c(-0.05, 0.05))
+rope(BayesMod_m1_p1.5, range = c(-0.05, 0.05))
+rope(BayesMod_m5_p.5, range = c(-0.05, 0.05))
+rope(BayesMod_m5, range = c(-0.05, 0.05))
+rope(BayesMod_m5_p1.5, range = c(-0.05, 0.05))
+
+
 
 # summary(lm(telomerelogSTD_out  ~ EduAge, data = telomere_set))
 rope(BayesMod_m5, range = c(-0.02, 0.02))
@@ -432,15 +510,15 @@ m3_clust <- RDHonest(ltl | EduAge16  ~ running_var | visit_day_correct + visit_d
                      T0 = m3_pre$coefficients$estimate, clusterid = site, se.method="EHW")
 
 # Cont. RD plotting 
-telomere_plt_linear <- telomere_set %>% 
+telomere_plt <- telomere_set %>% 
   group_by(running_var) %>% 
   summarise(sa = mean(ltl, na.rm = T), n =n()) %>% 
   {ggplot(., aes(running_var, sa)) +
-      geom_point(color = "blue", alpha = .3, size = 3) +
-      geom_point(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < m1$coefficients$bandwidth), color = "darkblue", alpha = .8, size = 3) +
-      geom_point(data=subset(., running_var < -m1$coefficients$bandwidth | running_var  > m1$coefficients$bandwidth), color = "blue", alpha = .3, size = 3) +
-      geom_vline(xintercept = 0,linetype="dashed") +
-      geom_smooth(data=subset(., running_var > -m1$coefficients$bandwidth & running_var  < m1$coefficients$bandwidth), method='glm',formula=y~poly(x,1),se=F, color = "black",  size = 1.5) +
+      geom_vline(xintercept = 0,linetype="dashed", size = 1) +
+      geom_point(color = "darkblue", alpha = .8, size = 3) +
+      # geom_point(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < m1$coefficients$bandwidth), color = "darkblue", alpha = .8, size = 3) +
+      # geom_point(data=subset(., running_var < -m1$coefficients$bandwidth | running_var  > m1$coefficients$bandwidth), color = "blue", alpha = .3, size = 3) +
+      # geom_smooth(data=subset(., running_var > -m1$coefficients$bandwidth & running_var  < m1$coefficients$bandwidth), method='glm',formula=y~poly(x,1),se=F, color = "black",  size = 1.5) +
       # geom_smooth(data=subset(., running_var > -m1$coefficients$bandwidth & running_var < 0), method='glm',formula=y~poly(x,1),se=F, color = "blue",  size = 1.5) +
       # geom_smooth(data=subset(., running_var > 0 & running_var  < m1$coefficients$bandwidth), method='glm',formula=y~poly(x,1),se=F, color = "blue",  size = 1.5) +
       labs(y = "Telomere Length\n(Std. monthly)", x = "Date of Birth in Months") + # bquote('Total Surface Area'~(mm^3))
@@ -456,7 +534,7 @@ telomere_plt_linear <- telomere_set %>%
 # ggsave("~/Google Drive/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/Plt1.png",
 #        telomere_plt_linear, width = 14, height = 8, bg = "white")
 
-pnas_plt <- basic_SIplt_dens / telomere_plt_linear + 
+pnas_plt <- basic_SIplt_dens / telomere_plt + 
   plot_annotation(tag_levels = 'a')
 # ggsave("~/Google Drive/My Drive/Assembled Chaos/10 Projects/10.02 ROSLA UK BioBank/10.02.02 ROSLA Telomere/figs/PNAS_Fig1.png",
 #        pnas_plt, width = 14, height = 16)
