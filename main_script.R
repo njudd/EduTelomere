@@ -291,13 +291,36 @@ telomere_set$EduAge16 <- as.numeric(telomere_set$EduAge16)
 
 set.seed(42)
 
-lr_w1 <- rdrandinf(Y = telomere_set$ltl, R = telomere_set$running_var, 
-          fuzzy = telomere_set$EduAge16, #statistic = "tsls",
-          wmasspoints = TRUE, wl=c(-1), wr=c(0), d = .13)
 
-lr_w5 <- rdrandinf(Y = telomere_set$ltl, R = telomere_set$running_var, 
-                   fuzzy = telomere_set$EduAge16, #statistic = "tsls",
+# reporting ITT & TSLS; power for both at 80% and on an effect of .2SD
+
+
+
+lr_w1_ITT <- rdrandinf(Y = telomere_set$ltl, R = telomere_set$running_var, 
+                   fuzzy = telomere_set$EduAge16,
+                   wmasspoints = TRUE, wl=c(-1), wr=c(0), d = .13) #need to manually figure out 80%
+lr_w1_TSLS <- rdrandinf(Y = telomere_set$ltl, R = telomere_set$running_var, 
+                   fuzzy = c(telomere_set$EduAge16, "tsls"),
+                   wmasspoints = TRUE, wl=c(-1), wr=c(0), d = .57)
+
+lr_w5_ITT <- rdrandinf(Y = telomere_set$ltl, R = telomere_set$running_var, 
+                   fuzzy = c(telomere_set$EduAge16), #statistic = "tsls",
                    wmasspoints = TRUE, wl=-5, wr=4, d = .06)
+lr_w5_TSLS <- rdrandinf(Y = telomere_set$ltl, R = telomere_set$running_var, 
+                   fuzzy = c(telomere_set$EduAge16, "tsls"), #statistic = "tsls",
+                   wmasspoints = TRUE, wl=-5, wr=4, d = .35)
+
+# as the reviewer said, subseting increases power... as then there is less college people water down my eff
+# telomere_setNOcollege <- telomere_set[telomere_set$EduAge<18,]
+# rdrandinf(Y = telomere_setNOcollege$ltl, R = telomere_setNOcollege$running_var, 
+#           fuzzy = c(telomere_setNOcollege$EduAge16, "tsls"), #statistic = "tsls",
+#           wmasspoints = TRUE, wl=-5, wr=4, d = .2)
+
+# it is too simple see https://pmc.ncbi.nlm.nih.gov/articles/PMC5837396/ (altho 2 binary things)
+# power.t.test(n = 400, delta = 0.2, sd = sd(telomere_set$ltl),
+#              type = "two.sample")
+# https://venexia.shinyapps.io/PharmIV/
+
 
 
 Rain_1m <- ggplot(telomere_set[running_var %in% c(-1,0)], aes(as.character(running_var),ltl_3SD, fill = as.character(running_var))) +
@@ -306,7 +329,7 @@ Rain_1m <- ggplot(telomere_set[running_var %in% c(-1,0)], aes(as.character(runni
   ggsignif::geom_signif(
     comparisons = list(c("-1", "0")),
     map_signif_level = TRUE) +
-  theme_minimal(base_size = 25) +
+  theme_minimal(base_size = 35) +
   theme(legend.position = "none") +
   labs(y = "Telomere Length", x = "") + 
   scale_x_discrete(labels = c("Aug 1957 (- ROSLA)", "Sept 1957 (+ ROSLA)"))
