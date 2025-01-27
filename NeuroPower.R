@@ -114,37 +114,49 @@ pwr_ltl <- data.frame(stage2 = stage2,
 
 # fwrite(pwr_ltl, "~/projects/EduTelomere/temp_data/pwr_ltl.csv")
 
+pwr_sa <- fread("~/projects/EduTelomere/temp_data/pwr_sa.csv")
+pwr_ltl <- fread("~/projects/EduTelomere/temp_data/pwr_ltl.csv")
 
 
 # graph of neuro power, was gonna do power curves but than Copilot recommended this & I like it!
-pwr_plt_neuro <-ggplot(pwrSTD_df, aes(x = stage2, y = std_eff, fill = power_.5sd))+
+
+# subset if you wish pwr_ltl[std_eff < .5 & stage2 < .5]
+pwr_plt_neuro <-ggplot(pwr_sa, aes(x = stage2, y = std_eff, fill = pwr))+
+  geom_vline(xintercept = .1, color = "red")+
+  geom_vline(xintercept = .16, color = "black")+
   geom_tile()+
+  geom_text(aes(label = round(pwr,2)), color = "white", size = 2.5) +
   scale_fill_viridis_c()+
   theme_minimal()+
-  geom_vline(xintercept = .1, color = "red")+
-  geom_vline(xintercept = .16, color = "darkred")+
   labs(title = "RD power graph for SA",
        subtitle = "n = 34010; effobs ~ 10042",
        x = "Proportion of people not going to school at 16",
        y = "Standardized effect size (s.d.)",
        fill = "Power (RBC)",
-       caption = "red line: 2nd stage for neuro \n white line: 2nd stage for telomere")
+       caption = "red line: 2nd stage estimate (10%) \n black line: Clark & Royer 2nd stage estimate")
 
 # do the same graph but with ltl as the outcome
-pwr_plt_ltl <- ggplot(pwrSTD_df_TELOMERE, aes(x = stage2, y = std_eff, fill = power_.5sd))+
+pwr_plt_ltl <- ggplot(pwr_ltl, aes(x = stage2, y = std_eff, fill = pwr))+
+  geom_vline(xintercept = .16, color = "red")+
+  geom_vline(xintercept = .16, color = "black")+
   geom_tile()+
+  geom_text(aes(label = round(pwr,2)), color = "white", size = 2.5) +
   scale_fill_viridis_c()+
   theme_minimal()+
-  geom_vline(xintercept = .1, color = "red")+
-  geom_vline(xintercept = .16, color = "darkred")+
   labs(title = "RD power graph for ltl",
        subtitle = "n = 256243; effobs ~ 61828",
        x = "Proportion of people not going to school at 16",
        y = "Standardized effect size (s.d.)",
        fill = "Power (RBC)",
-       caption = "red line: 2nd stage for neuro \n white line: 2nd stage for telomere")
+       caption = "red line: 2nd stage estimate (16%) \n black line: Clark & Royer 2nd stage estimate")
 
 # comparison from neuro to ltl
+
+ggsave("~/projects/EduTelomere/temp_plts/pwr_plt_neuro.png", pwr_plt_neuro, 
+       bg = "white", width = 9, height =7.3)
+ggsave("~/projects/EduTelomere/temp_plts/pwr_plt_ltl.png", pwr_plt_ltl, 
+       bg = "white", width = 9, height =7.3)
+
 
 # mean power across all effect sizes at a .25 stage2
 mean(pwrSTD_sa[pwrSTD_sa$stage2==.25,]$pwr)
@@ -167,6 +179,183 @@ rdr_ltl
 
 #
 rdpower(data=cbind(sa$SA, sa$running_var), fuzzy = sa$EduAge16)
+
+
+
+
+
+################## -------- ##################
+#################-- simulating data --#################
+################## -------- ##################
+
+# I want to simulate 7000, 1000 & 240 discrete values
+
+# for telomere the dataset is n=255243
+# for neuro n=34010
+
+# example:
+# library(arules)
+# discretize(iris$Sepal.Length, breaks =3)
+
+# function to donut hole (get rid of the entry over the cutoff)
+first_positive <- function(vec){
+  for (i in 1:length(vec)){
+    if (attr(vec,"discretized:breaks")[i] > 0){return(i)}}}
+
+# Toy dataset
+X <- array(rnorm(34000),dim=c(34000,2))
+R <- X[,1] + X[,2] + rnorm(34000)
+
+# simulating the relationship contineous n = 34,000
+Y <- 1 + R -.5*R^2 + .3*R^3 + (R>=0) + rnorm(34000)
+summary(rdrobust::rdrobust(Y,R))
+
+# now we will discrete it to our largest unit days over 20 years (~7000)
+R_7000 <- discretize(R, breaks = 7000, labels = FALSE)
+c_7000 <- first_positive(R_7000)
+R_7000[R_7000 == c_7000] <- rep(NA, length(R_7000[R_7000 == c_7000]))
+rdpower(data=cbind(Y,R_7000), cutoff = c_7000)$power.rbc
+
+# now we will discrete it to weeks over 20 years (~1000)
+R_1000 <- discretize(R, breaks = 1000, labels = FALSE)
+c_1000 <- first_positive(R_1000)
+R_1000[R_1000 == c_1000] <- rep(NA, length(R_1000[R_1000 == c_1000]))
+rdpower(data=cbind(Y_1000,R_1000), cutoff = c_1000)$power.rbc
+
+# now we will discrete it to months over 20 years (~240)
+R_240 <- discretize(R, breaks = 240, labels = FALSE)
+c_240 <- first_positive(R_240)
+R_240[R_240 == c_240] <- rep(NA, length(R_240[R_240 == c_240]))
+rdpower(data=cbind(Y_240,R_240), cutoff = c_240)$power.rbc
+
+# this increased power which was kinda weird...
+
+
+
+#### trying my own simulation...
+# if we do a year with 336 days it is easier as each month has 28 days and 4 weeks...
+# ^this might artificially inflate the power though; so we will also make it larger
+
+effect_per_day <- 0.001767/30
+
+running_days <- -3360:3359
+running_months <- rep(-120:119, each = 28) # there are 28 days in a month
+running_years <- rep(-12:19, each = 280) # there are 28 days in a month
+
+
+# in our data set
+# a mean of 1068 objs per month 
+# means around 35 per day...
+
+# n_per_day <- rbinom(length(y), 70, p=0.5)
+
+# an equal per day strategy for now...
+n_per_day <- 35
+
+# length(running_days)*35 # n ~ 235k
+
+df <- data.frame(running_days = rep(running_days, times = n_per_day), 
+                 running_months = rep(running_months, times = n_per_day),
+                 running_years = rep(running_years, times = n_per_day))
+
+# sum(df$running_months == -120); sum(df$running_months == 199)
+# looks good...
+
+Y <- 1 + R -.5*R^2 + .3*R^3 + (R>=0) + rnorm(34000)
+
+df$y <- rnorm(length(df$running_days), 0, 1) + (effect_per_day/10)*df$running_days
+
+
+rdpower(data=cbind(df$y,df$running_days), cutoff = 0)$power.rbc
+summary(rdrobust::rdrobust(df$y, df$running_days))
+
+
+rdpower(data=cbind(df$y,df$running_months), cutoff = 0)$power.rbc
+summary(rdrobust::rdrobust(df$y, df$running_months))
+
+
+RDHonest::RDHonest(y ~ running_months, data = df)
+RDHonest::RDHonest(y ~ running_days, data = df)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Power against tau = 1
+pwr_1000 <- rdpower(data=cbind(Y,R),tau=1)$power.rbc
+# Power against tau = 1 including covariates
+pwr_1000_cov <- rdpower(data=cbind(Y,R),tau=1,covs=X)$power.rbc
+
+
+Y_30 <- discretize(Y, breaks = 30)
+
+# finding zero
+
+Y_30[Y_30 == levels(discretize(Y, breaks = 30))[12]] <-
+  rep(NA, length(Y_30[Y_30 == levels(discretize(Y, breaks = 30))[12]]))
+
+
+
+
+
+
+R_30 <- discretize(R, breaks = 30, labels = FALSE)
+R_30[R_30 == first_positive(attr(R_30,"discretized:breaks"))] <- rep(NA, length(R_30[R_30 == first_positive(attr(R_30,"discretized:breaks"))]))
+pwr_30 <- rdpower(data=cbind(Y,R_30), cutoff = first_positive(attr(R_30,"discretized:breaks")))$power.rbc
+
+
+R_300 <- discretize(R, breaks = 300, labels = FALSE)
+R_300[R_300 == first_positive(attr(R_300,"discretized:breaks"))] <- rep(NA, length(R_300[R_300 == first_positive(attr(R_300,"discretized:breaks"))]))
+pwr_300 <- rdpower(data=cbind(Y,R_300), cutoff = first_positive(attr(R_300,"discretized:breaks")))$power.rbc
+
+
+
+pwr_1000; pwr_30; pwr_300
+
+
+### how you need to loop this a bit & mess around for your context
+
+
+# length(unique(telomere_set$running_var))*4 # 960 if you have weeks
+# length(unique(telomere_set$running_var))*28 # 6720 if you have days
+
+
+# 1) first show how more data != more power
+
+
+
+# is there a difference between simulating discrete and making it discrete?
+
+
+
+
+
+
+
+
+# 2) then show how more unique data point can really help power
+
+
+
+
+
+
+
+
+
 
 
 
