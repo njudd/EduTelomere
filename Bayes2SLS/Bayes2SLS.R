@@ -2,6 +2,55 @@
 # 2024-10-19
 
 
+
+# trying a bunch of different approaches for fuzzy RD
+
+pacman::p_load(tidyverse, rstan, causaldata, fixest, modelsummary)
+
+
+vet <- causaldata::mortgages
+
+
+# Create an "above-cutoff" variable as the instrument
+vet <- vet %>% mutate(above = qob_minus_kw > 0)
+
+vet <- vet %>%  filter(abs(qob_minus_kw) < 12)
+
+
+# DV ~ running*treated
+
+# treated ~ running
+
+
+stage1 <- lm(above ~ qob_minus_kw, data = vet)
+
+stage2 <- lm(home_ownership ~ stage1$fitted.values*qob_minus_kw, data = vet)
+
+
+m <- feols(home_ownership ~
+             nonwhite  | # Control for race
+             bpl + qob | # fixed effect controls
+             qob_minus_kw*vet_wwko ~ # Instrument our standard RDD
+             qob_minus_kw*above, # with being above the cutoff
+           se = 'hetero', # heteroskedasticity-robust SEs
+           data = vet) 
+
+# And look at the results
+summary(m)
+
+m_simple <- feols(home_ownership ~
+             qob | # fixed effect controls
+             qob_minus_kw*vet_wwko ~ # Instrument our standard RDD
+             qob_minus_kw*above, # with being above the cutoff
+           se = 'hetero', # heteroskedasticity-robust SEs
+           data = vet) 
+
+
+summary(m_simple)
+
+
+
+
 # stan links from MEA
 # https://mc-stan.org/users/documentation/
 # https://bruno.nicenboim.me/bayescogsci/ch-introstan.html#stan-syntax
